@@ -1,0 +1,8 @@
+*.origin
+*.swp
+*~
+*.pyc
+*.float64
+*.orig
+.dep
+build
