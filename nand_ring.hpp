@@ -7,13 +7,41 @@
 /**
  *
  */
-struct PageHeader {
+struct SpareFormat {
+  /**
+   * @brief     NAND specific area for bad mark storing.
+   * @details   Must be always set to 0xFFFF i.e. erased.
+   */
   uint16_t  bad_mark = -1;
-  uint64_t  id = 0;
+  /**
+   * @brief     Page id. Monotonically increasing numbers.
+   * @details   Zero value reserved.
+   */
+  uint64_t  id = 1;
+  /**
+   * @brief     Microseconds since system boot
+   */
   uint64_t  time_boot_uS = 0;
-  uint32_t  utc_correction;
+  /**
+   * @brief     Correction for system boot timestamp
+   * @details   Used when no date/time was available during boot and was
+   *            acquired later, for example from GPS.
+   */
+  uint32_t  utc_correction = 0;
+  /**
+   * @brief     Page ECC data.
+   */
   uint32_t  page_ecc;
-  uint8_t   spare_crc;
+  /**
+   * @brief     Session number.
+   * @details   Increments on every filesystem mount. Used for quicker
+   *            session search.
+   */
+  uint8_t   session = 0;
+  /**
+   * @brief     Seal CRC for this structure
+   */
+  uint8_t   spare_crc = -1;
 } __attribute__((packed));
 
 /**

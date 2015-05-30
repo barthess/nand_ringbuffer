@@ -6,14 +6,7 @@
 
 using namespace chibios_rt;
 
-/* Формат:
- * uint16_t   bad mark
- * uint64_t   record number (zero value forbidden)
- * uint64_t   time boot uS
- * uint32_t   UTC correction for time boot (0 if unknown)
- * uint32_t   page ECC
- * uint32_t   spare CRC32
- *
+/*
  * После запуска считаем, что предыдущий раз был неудачен по причине
  * отключения электричества, поэтому конец лога записываем заново:
  * 1) ощищаем следующий блок
@@ -101,7 +94,7 @@ static uint8_t nand_ring_crc8(const uint8_t *data, size_t len) {
 /**
  * @brief   Unpack spare data to header struct
  */
-static void spare2header(const uint8_t *buf, PageHeader *header) {
+static void spare2header(const uint8_t *buf, SpareFormat *header) {
   uint8_t crc;
 
   memcpy(header, buf, sizeof(*header));
@@ -114,7 +107,7 @@ static void spare2header(const uint8_t *buf, PageHeader *header) {
 /**
  *
  */
-static void header2spare(uint8_t *buf, const PageHeader *header) {
+static void header2spare(uint8_t *buf, const SpareFormat *header) {
   memset(buf, 0xFF, sizeof(*header));
   memcpy(buf, header, sizeof(*header));
 }
@@ -126,7 +119,7 @@ static void header2spare(uint8_t *buf, const PageHeader *header) {
 void NandRing::flush(const uint8_t *data) {
   const size_t ppb = this->nandp->config->pages_per_block;
   const size_t pss = this->nandp->config->page_spare_size;
-  PageHeader header;
+  SpareFormat header;
 
   osalDbgCheck(nullptr != data);
 
@@ -193,6 +186,8 @@ NandRing::NandRing(NANDDriver *nandp, uint32_t start_blk, uint32_t end_blk) :
   worker(nullptr)
 {
   osalDbgAssert(nullptr != sparebuf, "Can not allocate memory");
+  osalDbgAssert(sizeof(SpareFormat) <= nandp->config->page_spare_size,
+                "Not enough room in spare area");
 }
 
 /**
@@ -204,7 +199,7 @@ bool NandRing::mount(void) {
   uint32_t final_page = 0;
   const size_t ppb = this->nandp->config->pages_per_block;
   const size_t pss = this->nandp->config->page_spare_size;
-  PageHeader header;
+  SpareFormat header;
 
   current_blk = next_good(end_blk); /* find first good block */
   final_blk = current_blk;
