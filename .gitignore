@@ -6,3 +6,4 @@
 *.orig
 .dep
 build
+*.creator.user
