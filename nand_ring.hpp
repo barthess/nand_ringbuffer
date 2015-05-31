@@ -23,7 +23,7 @@ struct SpareFormat {
    */
   uint64_t  time_boot_uS = 0;
   /**
-   * @brief     Correction for system boot timestamp
+   * @brief     Correction for system boot time stamp
    * @details   Used when no date/time was available during boot and was
    *            acquired later, for example from GPS.
    */
@@ -34,7 +34,7 @@ struct SpareFormat {
   uint32_t  page_ecc;
   /**
    * @brief     Session number.
-   * @details   Increments on every filesystem mount. Used for quicker
+   * @details   Increments on every file system mount. Used for quicker
    *            session search.
    */
   uint8_t   session = 0;
