@@ -98,7 +98,7 @@ static void spare2header(const uint8_t *buf, SpareFormat *header) {
   uint8_t crc;
 
   memcpy(header, buf, sizeof(*header));
-  // verifieng CRC here. If incorrect than overwrite ID field with 0xFF
+  // verification of CRC here. If incorrect than overwrite ID field with 0xFF
   crc = nand_ring_crc8(buf, sizeof(*header) - sizeof(header->spare_crc));
   if (crc != header->spare_crc)
     memset(&header->id, 0xFF, sizeof(header->id));
@@ -204,7 +204,7 @@ bool NandRing::mount(void) {
   current_blk = next_good(end_blk); /* find first good block */
   final_blk = current_blk;
 
-  /* Find final written block. Presume it hase biggest ID. */
+  /* Find final written block. Presume it has biggest ID. */
   while (next_good(current_blk) > current_blk) {
     nandReadPageSpare(nandp, current_blk, 0, sparebuf, pss);
     spare2header(sparebuf, &header);
@@ -215,7 +215,7 @@ bool NandRing::mount(void) {
     current_blk = next_good(current_blk);
   }
 
-  /* Find final written page. Presume it hase biggest ID. */
+  /* Find final written page. Presume it has biggest ID. */
   final_page = 0;
   for (size_t p=0; p<ppb; p++) {
     nandReadPageSpare(nandp, final_blk, p, sparebuf, pss);

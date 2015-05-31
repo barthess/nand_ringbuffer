@@ -71,7 +71,8 @@ private:
   friend void NandWorker(void *arg);
   uint32_t next_good(uint32_t current);
   void flush(const uint8_t *data);
-  MultiBufferAccumulator<uint8_t, 2048, 3> multibuf; //FIXME: remove hardcoded sizes
+  MultiBufferAccumulator<uint8_t, 2048, 3> multibuf;//FIXME: remove hardcoded sizes
+  MultiBufferAccumulator2<2048, 3> pool; //FIXME: remove hardcoded sizes
   chibios_rt::Mailbox<uint8_t *, 3> mailbox; // FIXME: remove hardcoded size
   uint32_t current_blk;
   uint32_t current_page;
