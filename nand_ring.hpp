@@ -9,7 +9,7 @@
 /**
  *
  */
-struct SpareFormat {
+struct NandPageHeader {
   /**
    * @brief     NAND specific area for bad mark storing.
    * @details   Must be always set to 0xFFFF i.e. erased.
@@ -65,26 +65,30 @@ class NandRing {
 public:
   NandRing(NANDDriver *nandp, uint32_t start_blk, uint32_t end_blk);
   bool mount(void);
-  bool format(void);
+  bool mkfs(void);
   size_t append(const uint8_t *data, size_t len);
   void setUtcCorrection(uint32_t correction);
   size_t searchSessions(Session *result, size_t max_sessions);
 private:
   friend void NandWorker(void *arg);
   uint32_t next_good(uint32_t current);
+  uint32_t get_total_good(void);
+  uint8_t read_session_num(uint32_t blk, uint32_t page);
   void flush(const uint8_t *data);
   MultiBufferAccumulator<2048, NAND_BUFFER_COUNT> multibuf; //FIXME: remove hardcoded sizes
-  chibios_rt::Mailbox<uint8_t*, NAND_BUFFER_COUNT> mailbox; // FIXME: remove hardcoded size
+  chibios_rt::Mailbox<uint8_t*, NAND_BUFFER_COUNT> mailbox;
   uint32_t current_blk;
   uint32_t current_page;
   uint64_t current_id;
   uint8_t current_session;
   uint32_t utc_correction;
-  const uint32_t start_blk;
-  const uint32_t end_blk;
+  const uint32_t start; // first block of storage
+  const uint32_t end;   // last block of storage
   NANDDriver *nandp;
   uint8_t *sparebuf;
   thread_t *worker;
+  bool ready;
+  uint32_t total_good_blk; // mostly for diagnostics using console
 };
 
 #endif /* NAND_RING_HPP_ */
