@@ -60,6 +60,23 @@ static uint8_t working_area[WORKING_AREA_SIZE];
  ******************************************************************************
  ******************************************************************************
  */
+/**
+ *
+ */
+static systime_t prev_time = 0;
+static size_t wrap_cnt = 0;
+static const uint64_t overlap_size = (uint64_t)1 << (sizeof(systime_t) * 8);
+static uint64_t get_time_boot_us(void) {
+  systime_t now = chVTGetSystemTimeX();
+
+  if (prev_time > now) {
+    wrap_cnt++;
+  }
+  prev_time = now;
+
+  uint64_t tmp = overlap_size * wrap_cnt + now;
+  return (tmp * 1000000 + CH_CFG_ST_FREQUENCY - 1) / CH_CFG_ST_FREQUENCY;
+}
 
 /**
  *
@@ -113,30 +130,28 @@ static void header2spare(uint8_t *buf, const SpareFormat *header) {
 }
 
 /**
- * @brief NandRing::flush
- * @param data
+ * @brief   Flush data block to NAND page and seal it using spare area.
  */
 void NandRing::flush(const uint8_t *data) {
   const size_t ppb = this->nandp->config->pages_per_block;
   const size_t pss = this->nandp->config->page_spare_size;
+  const size_t pds = this->nandp->config->page_data_size;
   SpareFormat header;
 
   osalDbgCheck(nullptr != data);
 
-  nandWritePageData(nandp, current_blk, current_page, data, 2048, &header.page_ecc);
-  // TODO: check written status
-  // FIXME: delete hardcoded page size
+  nandWritePageData(nandp, current_blk, current_page, data, pds, &header.page_ecc);
+  // TODO: check written status and set bad mark
 
   header.id = this->current_id;
   header.utc_correction = this->utc_correction;
-  header.time_boot_uS = ST2US(chVTGetSystemTimeX());
+  header.time_boot_uS = get_time_boot_us();
   header.spare_crc = nand_ring_crc8((uint8_t *)&header,
                                     sizeof(header) - sizeof(header.spare_crc));
 
   header2spare(sparebuf, &header);
   nandWritePageSpare(nandp, current_blk, current_page, sparebuf, pss);
-  // TODO: check written status
-  // FIXME: delete hardcoded page size
+  // TODO: check written status and set bad mark
 
   /* prepare next iteration */
   current_id++;
@@ -158,9 +173,11 @@ THD_FUNCTION(NandWorker, arg) {
   uint8_t *data = nullptr;
 
   while (!chThdShouldTerminateX()) {
-    self->mailbox.fetch(&data, MS2ST(200));
-    self->flush(data);
-    data = nullptr;
+    if (MSG_OK == self->mailbox.fetch(&data, MS2ST(200))){
+      self->flush(data);
+      self->multibuf.free(data);
+      data = nullptr;
+    }
   }
 
   chThdExit(MSG_OK);
@@ -178,6 +195,7 @@ NandRing::NandRing(NANDDriver *nandp, uint32_t start_blk, uint32_t end_blk) :
   current_blk(start_blk),
   current_page(0),
   current_id(0),
+  current_session(0),
   utc_correction(COMPILE_TIME_UTC),
   start_blk(start_blk),
   end_blk(end_blk),
@@ -266,17 +284,18 @@ bool NandRing::mount(void) {
 /**
  *
  */
-bool NandRing::append(const uint8_t *data, size_t len) {
-  (void)header2spare;
+size_t NandRing::append(const uint8_t *data, size_t len) {
+  size_t written = 0;
 
-  // TODO: check available space in buffer and return FAILED if not enough.
+  uint8_t *ptr = multibuf.append(data, len, &written);
 
-  uint8_t *ptr = multibuf.append(data, len);
   if (nullptr != ptr) {
-    this->flush(ptr);
+    // There is not check for post status because mailbox has exactly the
+    // same slot count like multibuffer has.
+    mailbox.post(ptr, TIME_IMMEDIATE);
   }
 
-  return OSAL_SUCCESS;
+  return written;
 }
 
 

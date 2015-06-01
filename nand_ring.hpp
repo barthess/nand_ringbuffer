@@ -4,6 +4,8 @@
 #include "ch.hpp"
 #include "multi_buffer.hpp"
 
+#define NAND_BUFFER_COUNT       3
+
 /**
  *
  */
@@ -64,19 +66,19 @@ public:
   NandRing(NANDDriver *nandp, uint32_t start_blk, uint32_t end_blk);
   bool mount(void);
   bool format(void);
-  bool append(const uint8_t *data, size_t len);
+  size_t append(const uint8_t *data, size_t len);
   void setUtcCorrection(uint32_t correction);
   size_t searchSessions(Session *result, size_t max_sessions);
 private:
   friend void NandWorker(void *arg);
   uint32_t next_good(uint32_t current);
   void flush(const uint8_t *data);
-  MultiBufferAccumulator<uint8_t, 2048, 3> multibuf;//FIXME: remove hardcoded sizes
-  MultiBufferAccumulator2<2048, 3> pool; //FIXME: remove hardcoded sizes
-  chibios_rt::Mailbox<uint8_t *, 3> mailbox; // FIXME: remove hardcoded size
+  MultiBufferAccumulator<2048, NAND_BUFFER_COUNT> multibuf; //FIXME: remove hardcoded sizes
+  chibios_rt::Mailbox<uint8_t*, NAND_BUFFER_COUNT> mailbox; // FIXME: remove hardcoded size
   uint32_t current_blk;
   uint32_t current_page;
   uint64_t current_id;
+  uint8_t current_session;
   uint32_t utc_correction;
   const uint32_t start_blk;
   const uint32_t end_blk;
