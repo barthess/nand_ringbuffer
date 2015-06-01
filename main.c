@@ -97,9 +97,7 @@
  ******************************************************************************
  */
 #if STM32_NAND_USE_EXT_INT
-static void ready_isr_enable(void);
-static void ready_isr_disable(void);
-static void nand_ready_cb(EXTDriver *extp, expchannel_t channel);
+#error "External interrupt mode is not a goal of this test"
 #endif
 
 /*
@@ -107,11 +105,6 @@ static void nand_ready_cb(EXTDriver *extp, expchannel_t channel);
  * GLOBAL VARIABLES
  ******************************************************************************
  */
-/*
- *
- */
-static uint8_t nand_buf[NAND_PAGE_SIZE];
-//static uint8_t ref_buf[NAND_PAGE_SIZE];
 
 /*
  *
@@ -158,24 +151,6 @@ static void nand_wp_release(void)  {palSetPad(GPIOB, GPIOB_NAND_WP);}
 static void red_led_on(void)       {palSetPad(GPIOI, GPIOI_LED_R);}
 static void red_led_off(void)      {palClearPad(GPIOI, GPIOI_LED_R);}
 
-/*
- *
- */
-static bool is_erased(NANDDriver *dp, size_t block) {
-  uint32_t page = 0;
-  size_t i = 0;
-
-  for (page=0; page<NAND.config->pages_per_block; page++){
-    nandReadPageData(dp, block, page, nand_buf, NAND.config->page_data_size, NULL);
-    nandReadPageSpare(dp, block, page, &nand_buf[2048], NAND.config->page_spare_size);
-    for (i=0; i<sizeof(nand_buf); i++) {
-      if (nand_buf[i] != 0xFF)
-        return false;
-    }
-  }
-
-  return true;
-}
 
 /*
  * Benchmark for page based brute force search
@@ -235,6 +210,9 @@ int main(void) {
    */
   while (true) {
     chThdSleepMilliseconds(500);
+    red_led_on();
+    chThdSleepMilliseconds(500);
+    red_led_off();
   }
 }
 
