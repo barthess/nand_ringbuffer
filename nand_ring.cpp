@@ -245,6 +245,13 @@ NandRing::NandRing(NANDDriver *nandp, uint32_t start_blk, uint32_t end_blk) :
 }
 
 /**
+ * @brief NandRing::~NandRing
+ */
+NandRing::~NandRing(void) {
+  osalSysHalt("Destruction forbidden");
+}
+
+/**
  *
  */
 bool NandRing::mkfs(void) {
@@ -256,7 +263,7 @@ bool NandRing::mkfs(void) {
   while (current <= end) {
     if (! nandIsBad(nandp, current)) {
       nandErase(nandp, current);
-      // TODO: check erased status and set bad mark if needed
+      // TODO: check status and set bad mark if needed
     }
     current++;
   }
@@ -272,9 +279,9 @@ bool NandRing::mkfs(void) {
  *
  */
 bool NandRing::mount(void) {
-  uint64_t candidate_id = 0;
-  uint32_t candidate_blk = 0;
-  uint32_t candidate_page = 0;
+  uint64_t last_id = 0;
+  uint32_t last_blk = 0;
+  uint32_t last_page = 0;
   const size_t ppb = this->nandp->config->pages_per_block;
   const size_t pss = this->nandp->config->page_spare_size;
   NandPageHeader header;
@@ -284,57 +291,57 @@ bool NandRing::mount(void) {
     return OSAL_FAILED;
 
   current_blk = next_good(end); /* find first good block */
-  candidate_blk = current_blk;
+  last_blk = current_blk;
 
   /* Find last written block. Presume it has biggest ID. */
   while (next_good(current_blk) > current_blk) {
     nandReadPageSpare(nandp, current_blk, 0, sparebuf, pss);
     spare2header(sparebuf, &header);
-    if ((PAGE_ID_ERASED != header.id) && (header.id >= candidate_id)) {
-      candidate_blk = current_blk;
-      candidate_id = header.id;
+    if ((PAGE_ID_ERASED != header.id) && (header.id >= last_id)) {
+      last_blk = current_blk;
+      last_id = header.id;
     }
     current_blk = next_good(current_blk);
   }
 
   /* Find final written page. Presume it has biggest ID. */
-  candidate_page = 0;
+  last_page = 0;
   for (size_t p=0; p<ppb; p++) {
-    nandReadPageSpare(nandp, candidate_blk, p, sparebuf, pss);
+    nandReadPageSpare(nandp, last_blk, p, sparebuf, pss);
     spare2header(sparebuf, &header);
-    if ((PAGE_ID_ERASED != header.id) && (header.id >= candidate_id)) {
-      candidate_page = p;
-      candidate_id = header.id;
+    if ((PAGE_ID_ERASED != header.id) && (header.id >= last_id)) {
+      last_page = p;
+      last_id = header.id;
     }
   }
 
   /* "recover" latest data */
-  current_blk = next_good(candidate_blk);
+  current_blk = next_good(last_blk);
   nandErase(nandp, current_blk);
   // TODO: check erase status and set bad flag if needed
-  for (size_t p=0; p<candidate_page; p++) {
-    nandReadPageWhole(nandp, candidate_blk, p, working_area, WORKING_AREA_SIZE);
+  for (size_t p=0; p<last_page; p++) {
+    nandReadPageWhole(nandp, last_blk, p, working_area, WORKING_AREA_SIZE);
     nandWritePageWhole(nandp, current_blk, p, working_area, WORKING_AREA_SIZE);
     // TODO: check returned written status
     // TODO: check ECC
     // TODO: use internal buffers for rewriting data
   }
-  nandErase(nandp, candidate_blk);
+  nandErase(nandp, last_blk);
   // TODO: check erase status and set bad flag if needed
-  for (size_t p=0; p<candidate_page; p++) {
+  for (size_t p=0; p<last_page; p++) {
     nandReadPageWhole(nandp, current_blk, p, working_area, WORKING_AREA_SIZE);
-    nandWritePageWhole(nandp, candidate_blk, p, working_area, WORKING_AREA_SIZE);
+    nandWritePageWhole(nandp, last_blk, p, working_area, WORKING_AREA_SIZE);
     // TODO: check returned written status
     // TODO: check ECC
     // TODO: use internal buffers for rewriting data
   }
 
   /* set "pointers" to the begining of the free area */
-  current_session = read_session_num(candidate_blk, candidate_page);
+  current_session = read_session_num(last_blk, last_page);
   current_session++;
-  current_id = candidate_id + 1;
-  current_blk = candidate_blk;
-  current_page = candidate_page + 1;
+  current_id = last_id + 1;
+  current_blk = last_blk;
+  current_page = last_page + 1;
   osalDbgAssert(current_page <= ppb, "Overflow");
   if (current_page == ppb) {
     current_page = 0;

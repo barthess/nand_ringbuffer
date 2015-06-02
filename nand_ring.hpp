@@ -64,6 +64,8 @@ struct Session {
 class NandRing {
 public:
   NandRing(NANDDriver *nandp, uint32_t start_blk, uint32_t end_blk);
+  ~NandRing(void);
+  void __test_reconfigure(uint32_t start_blk, uint32_t end_blk);
   bool mount(void);
   bool mkfs(void);
   size_t append(const uint8_t *data, size_t len);

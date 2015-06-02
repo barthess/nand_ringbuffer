@@ -780,3 +780,5 @@ ui.cpp
 ui.hpp
 usbcfg.c
 usbcfg.h
+nand_test.hpp
+nand_test.cpp
