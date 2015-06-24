@@ -1,6 +1,7 @@
 #ifndef MULTI_BUFFER_HPP_
 #define MULTI_BUFFER_HPP_
 
+#include "string.h"
 #include "ch.hpp"
 
 /**

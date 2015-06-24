@@ -110,16 +110,19 @@ CSRC = $(STARTUPSRC) \
        $(CHIBIOS)/os/various/syscalls.c \
        $(CHIBIOS)/os/hal/lib/streams/chprintf.c \
        $(CHIBIOS)/os/hal/lib/streams/memstreams.c \
-       main.c \
        usbcfg.c \
        microrl.c
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
-CPPSRC = nand_ring.cpp \
+CPPSRC =  $(CHCPPSRC) \
+         nand_ring.cpp \
+         nand_test.cpp \
+         nand_worker.cpp \
          ui.cpp \
          cli/cli.cpp  \
-         cli/cli_cmd.cpp
+         cli/cli_cmd.cpp \
+         main.cpp \
 
 # C sources to be compiled in ARM mode regardless of the global setting.
 # NOTE: Mixing ARM and THUMB mode enables the -mthumb-interwork compiler

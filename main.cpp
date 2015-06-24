@@ -48,6 +48,7 @@
 #include "hal.h"
 
 #include "bitmap.h"
+#include "nand_test.hpp"
 
 #include "ui.hpp"
 
@@ -115,14 +116,13 @@
 //static time_measurement_t tmu_read_data;
 //static time_measurement_t tmu_read_spare;
 static time_measurement_t tmu_driver_start;
-static time_measurement_t tmu_search_timestamp;
+//static time_measurement_t tmu_search_timestamp;
 
 static bitmap_word_t badblock_map_array[BAD_MAP_LEN];
 static bitmap_t badblock_map = {
     badblock_map_array,
     BAD_MAP_LEN
 };
-
 
 /*
  *
@@ -139,6 +139,8 @@ static const NANDConfig nandcfg = {
                                  (FSMCNAND_TIME_WAIT << 8) | FSMCNAND_TIME_SET),
 };
 
+static NandRing ring(1023, 2047);
+
 /*
  ******************************************************************************
  ******************************************************************************
@@ -152,19 +154,19 @@ static void red_led_on(void)       {palSetPad(GPIOI, GPIOI_LED_R);}
 static void red_led_off(void)      {palClearPad(GPIOI, GPIOI_LED_R);}
 
 
-/*
- * Benchmark for page based brute force search
- */
-static void search_timestamp(NANDDriver *nandp) {
-  uint8_t buf[18];
-  size_t p, b;
+///*
+// * Benchmark for page based brute force search
+// */
+//static void search_timestamp(NANDDriver *nandp) {
+//  uint8_t buf[18];
+//  size_t p, b;
 
-  for (b=0; b<NAND_BLOCKS_COUNT; b++) {
-    for (p=0; p<NAND_PAGES_PER_BLOCK; p++) {
-      nandReadPageSpare(nandp, b, p, buf, sizeof(buf));
-    }
-  }
-}
+//  for (b=0; b<NAND_BLOCKS_COUNT; b++) {
+//    for (p=0; p<NAND_PAGES_PER_BLOCK; p++) {
+//      nandReadPageSpare(nandp, b, p, buf, sizeof(buf));
+//    }
+//  }
+//}
 
 /*
  ******************************************************************************
@@ -194,15 +196,12 @@ int main(void) {
   nandStart(&NAND, &nandcfg, &badblock_map);
   chTMStopMeasurementX(&tmu_driver_start);
 
-  chTMObjectInit(&tmu_search_timestamp);
-  chTMStartMeasurementX(&tmu_search_timestamp);
-  search_timestamp(&NAND);
-  chTMStopMeasurementX(&tmu_search_timestamp);
+  uint8_t *sparebuf_p = ((uint8_t *)chCoreAlloc(nandcfg.page_spare_size));
+  osalDbgAssert(nullptr != sparebuf_p, "Can not allocate memory");
 
   nand_wp_release();
-
-
-
+  ring.start(&NANDD1, sparebuf_p);
+  NandTest(ring);
   nand_wp_assert();
 
   /*

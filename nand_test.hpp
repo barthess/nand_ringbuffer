@@ -1,12 +1,9 @@
 #ifndef NAND_TEST_HPP
 #define NAND_TEST_HPP
 
+#include "nand_ring.hpp"
+#include "nand_worker.hpp"
 
-class NandTestMount();
-public:
-  NandTest(void);
-private:
-
-};
+void NandTest(NandRing &ring);
 
 #endif // NAND_TEST_HPP

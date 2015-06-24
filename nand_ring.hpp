@@ -1,10 +1,8 @@
 #ifndef NAND_RING_HPP_
 #define NAND_RING_HPP_
 
-#include "ch.hpp"
-#include "multi_buffer.hpp"
-
-#define NAND_BUFFER_COUNT       3
+//#include "ch.hpp"
+#include "hal.h"
 
 /**
  *
@@ -58,38 +56,42 @@ struct Session {
   uint32_t  utc_end;
 };
 
+enum class nand_ring_state_t {
+  UNINIT,
+  IDLE,
+  MOUNTED
+};
+
 /**
  *
  */
 class NandRing {
 public:
-  NandRing(NANDDriver *nandp, uint32_t start_blk, uint32_t end_blk);
+  NandRing(uint32_t start_blk, uint32_t end_blk);
   ~NandRing(void);
   void __test_reconfigure(uint32_t start_blk, uint32_t end_blk);
+  void start(NANDDriver *nandp, uint8_t *sparebuf);
   bool mount(void);
+  void umount(void);
+  void stop(void);
   bool mkfs(void);
-  size_t append(const uint8_t *data, size_t len);
+  void writePage(const uint8_t *data);
   void setUtcCorrection(uint32_t correction);
   size_t searchSessions(Session *result, size_t max_sessions);
 private:
-  friend void NandWorker(void *arg);
   uint32_t next_good(uint32_t current);
   uint32_t get_total_good(void);
   uint8_t read_session_num(uint32_t blk, uint32_t page);
-  void flush(const uint8_t *data);
-  MultiBufferAccumulator<2048, NAND_BUFFER_COUNT> multibuf; //FIXME: remove hardcoded sizes
-  chibios_rt::Mailbox<uint8_t*, NAND_BUFFER_COUNT> mailbox;
   uint32_t current_blk;
   uint32_t current_page;
   uint64_t current_id;
   uint8_t current_session;
   uint32_t utc_correction;
-  const uint32_t start; // first block of storage
-  const uint32_t end;   // last block of storage
+  const uint32_t start_blk; // first block of storage
+  const uint32_t end_blk;   // last block of storage
   NANDDriver *nandp;
+  nand_ring_state_t state;
   uint8_t *sparebuf;
-  thread_t *worker;
-  bool ready;
   uint32_t total_good_blk; // mostly for diagnostics using console
 };
 

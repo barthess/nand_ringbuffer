@@ -33,7 +33,7 @@ using namespace chibios_rt;
  ******************************************************************************
  */
 #define PAGE_ID_ERASED            (uint64_t)0xFFFFFFFFFFFFFFFF
-#define WORKING_AREA_SIZE         (2048 + 64) /* TODO: delete this hardcode */
+#define SCRATCHPAD_SIZE           (2048 + 64) /* TODO: delete this hardcode */
 #define COMPILE_TIME_UTC          1400000000
 #define MIN_RING_BLOCKS           16 // minimal meaningful storage size
 #define MIN_GOOD_BLOCKS           4 // minimal allowable good blocks count
@@ -55,7 +55,7 @@ using namespace chibios_rt;
  * GLOBAL VARIABLES
  ******************************************************************************
  */
-static uint8_t working_area[WORKING_AREA_SIZE];
+static uint8_t scratchpad[SCRATCHPAD_SIZE];
 
 /*
  ******************************************************************************
@@ -89,8 +89,8 @@ uint32_t NandRing::next_good(uint32_t current) {
 
   while (true) {
     current++;
-    if (current > end)
-      current = start;
+    if (current > end_blk)
+      current = start_blk;
     if (! nandIsBad(nandp, current))
       return current;
   }
@@ -113,9 +113,9 @@ uint8_t NandRing::read_session_num(uint32_t blk, uint32_t page) {
  */
 uint32_t NandRing::get_total_good(void) {
   uint32_t ret = 0;
-  uint32_t current = this->start;
+  uint32_t current = this->start_blk;
 
-  while (current <= end) {
+  while (current <= end_blk) {
     if (! nandIsBad(nandp, current)) {
       ret++;
     }
@@ -161,60 +161,6 @@ static void header2spare(uint8_t *buf, const NandPageHeader *header) {
   memcpy(buf, header, sizeof(*header));
 }
 
-/**
- * @brief   Flush data block to NAND page and seal it using spare area.
- */
-void NandRing::flush(const uint8_t *data) {
-  const size_t ppb = this->nandp->config->pages_per_block;
-  const size_t pss = this->nandp->config->page_spare_size;
-  const size_t pds = this->nandp->config->page_data_size;
-  NandPageHeader header;
-
-  osalDbgCheck(nullptr != data);
-
-  nandWritePageData(nandp, current_blk, current_page, data, pds, &header.page_ecc);
-  // TODO: check written status and set bad mark
-
-  header.id = this->current_id;
-  header.utc_correction = this->utc_correction;
-  header.time_boot_uS = get_time_boot_us();
-  header.spare_crc = nand_ring_crc8((uint8_t *)&header,
-                                    sizeof(header) - sizeof(header.spare_crc));
-
-  header2spare(sparebuf, &header);
-  nandWritePageSpare(nandp, current_blk, current_page, sparebuf, pss);
-  // TODO: check written status and set bad mark
-
-  /* prepare next iteration */
-  current_id++;
-  current_page++;
-  osalDbgAssert(current_page <= ppb, "Overflow");
-  if (current_page == ppb) {
-    current_page = 0;
-    current_blk = next_good(current_blk);
-  }
-}
-
-/**
- *
- */
-static THD_WORKING_AREA(NandWorkerThreadWA, 320);
-THD_FUNCTION(NandWorker, arg) {
-  chRegSetThreadName("NandWorker");
-  NandRing *self = static_cast<NandRing *>(arg);
-  uint8_t *data = nullptr;
-
-  while (!chThdShouldTerminateX()) {
-    if (MSG_OK == self->mailbox.fetch(&data, MS2ST(200))){
-      self->flush(data);
-      self->multibuf.free(data);
-      data = nullptr;
-    }
-  }
-
-  chThdExit(MSG_OK);
-}
-
 /*
  ******************************************************************************
  * EXPORTED FUNCTIONS
@@ -223,25 +169,21 @@ THD_FUNCTION(NandWorker, arg) {
 /**
  *
  */
-NandRing::NandRing(NANDDriver *nandp, uint32_t start_blk, uint32_t end_blk) :
+NandRing::NandRing(uint32_t start_blk, uint32_t end_blk) :
   current_blk(start_blk),
   current_page(0),
   current_id(0),
   current_session(0),
   utc_correction(COMPILE_TIME_UTC),
-  start(start_blk),
-  end(end_blk),
-  nandp(nandp),
-  sparebuf((uint8_t *)chCoreAlloc(nandp->config->page_spare_size)),
-  worker(nullptr),
-  ready(false),
+  start_blk(start_blk),
+  end_blk(end_blk),
+  nandp(nullptr),
+  state(nand_ring_state_t::UNINIT),
+  sparebuf(nullptr),
   total_good_blk(0)
 {
   osalDbgAssert(end_blk > start_blk+MIN_RING_BLOCKS,
                 "Such small storage size is pointless");
-  osalDbgAssert(nullptr != sparebuf, "Can not allocate memory");
-  osalDbgAssert(sizeof(NandPageHeader) <= nandp->config->page_spare_size,
-                "Not enough room in spare area");
 }
 
 /**
@@ -252,15 +194,29 @@ NandRing::~NandRing(void) {
 }
 
 /**
+ * @pre  NAND must be configured and started externally
+ */
+void NandRing::start(NANDDriver *nandp, uint8_t *sparebuf) {
+  osalDbgCheck((NAND_UNINIT != nandp->state) && (NAND_STOP != nandp->state));
+
+  this->nandp = nandp;
+  this->sparebuf = sparebuf;
+  osalDbgAssert(nullptr != sparebuf, "Can not allocate memory");
+  osalDbgAssert(sizeof(NandPageHeader) <= nandp->config->page_spare_size,
+                "Not enough room in spare area");
+  this->state = nand_ring_state_t::IDLE;
+}
+
+/**
  *
  */
 bool NandRing::mkfs(void) {
-  // only unmounted flash able to be formatted
-  osalDbgCheck(false == ready);
+  // only unmounted flash may be formatted
+  osalDbgCheck(nand_ring_state_t::IDLE == state);
 
-  uint32_t current = this->start;
+  uint32_t current = this->start_blk;
 
-  while (current <= end) {
+  while (current <= end_blk) {
     if (! nandIsBad(nandp, current)) {
       nandErase(nandp, current);
       // TODO: check status and set bad mark if needed
@@ -286,11 +242,13 @@ bool NandRing::mount(void) {
   const size_t pss = this->nandp->config->page_spare_size;
   NandPageHeader header;
 
+  osalDbgCheck(nand_ring_state_t::IDLE == state);
+
   total_good_blk = get_total_good();
   if (total_good_blk < MIN_GOOD_BLOCKS)
     return OSAL_FAILED;
 
-  current_blk = next_good(end); /* find first good block */
+  current_blk = next_good(end_blk); /* find first good block */
   last_blk = current_blk;
 
   /* Find last written block. Presume it has biggest ID. */
@@ -320,8 +278,8 @@ bool NandRing::mount(void) {
   nandErase(nandp, current_blk);
   // TODO: check erase status and set bad flag if needed
   for (size_t p=0; p<last_page; p++) {
-    nandReadPageWhole(nandp, last_blk, p, working_area, WORKING_AREA_SIZE);
-    nandWritePageWhole(nandp, current_blk, p, working_area, WORKING_AREA_SIZE);
+    nandReadPageWhole(nandp, last_blk, p, scratchpad, SCRATCHPAD_SIZE);
+    nandWritePageWhole(nandp, current_blk, p, scratchpad, SCRATCHPAD_SIZE);
     // TODO: check returned written status
     // TODO: check ECC
     // TODO: use internal buffers for rewriting data
@@ -329,8 +287,8 @@ bool NandRing::mount(void) {
   nandErase(nandp, last_blk);
   // TODO: check erase status and set bad flag if needed
   for (size_t p=0; p<last_page; p++) {
-    nandReadPageWhole(nandp, current_blk, p, working_area, WORKING_AREA_SIZE);
-    nandWritePageWhole(nandp, last_blk, p, working_area, WORKING_AREA_SIZE);
+    nandReadPageWhole(nandp, current_blk, p, scratchpad, SCRATCHPAD_SIZE);
+    nandWritePageWhole(nandp, last_blk, p, scratchpad, SCRATCHPAD_SIZE);
     // TODO: check returned written status
     // TODO: check ECC
     // TODO: use internal buffers for rewriting data
@@ -348,30 +306,57 @@ bool NandRing::mount(void) {
     current_blk = next_good(current_blk);
   }
 
-  /* launch async data worker */
-  this->worker = chThdCreateStatic(NandWorkerThreadWA, sizeof(NandWorkerThreadWA),
-                                   NORMALPRIO, NandWorker, this);
-  osalDbgAssert(nullptr != this->worker, "Can not allocate memroy");
-
-  ready = true;
+  state = nand_ring_state_t::MOUNTED;
   return OSAL_SUCCESS;
 }
 
 /**
- *
+ * @brief NandRing::umount
  */
-size_t NandRing::append(const uint8_t *data, size_t len) {
-  size_t written = 0;
+void NandRing::umount(void) {
+  state = nand_ring_state_t::IDLE;
+}
 
-  osalDbgCheck(this->ready);
+/**
+ * @brief NandRing::umount
+ */
+void NandRing::stop(void) {
+  state = nand_ring_state_t::UNINIT;
+}
 
-  uint8_t *ptr = multibuf.append(data, len, &written);
+/**
+ * @brief   Flush data to NAND page and seal it using spare area.
+ * @note    Buffer must be the same size as page.
+ * @note    This function can write single whole page at time.
+ */
+void NandRing::writePage(const uint8_t *data) {
+  const size_t ppb = this->nandp->config->pages_per_block;
+  const size_t pss = this->nandp->config->page_spare_size;
+  const size_t pds = this->nandp->config->page_data_size;
+  NandPageHeader header;
 
-  if (nullptr != ptr) {
-    // There is not check for post status because mailbox has exactly the
-    // same slots count as multibuffer has.
-    mailbox.post(ptr, TIME_IMMEDIATE);
+  osalDbgCheck(nullptr != data);
+  osalDbgCheck(nand_ring_state_t::MOUNTED == state);
+
+  nandWritePageData(nandp, current_blk, current_page, data, pds, &header.page_ecc);
+  // TODO: check written status and set bad mark
+
+  header.id = this->current_id;
+  header.utc_correction = this->utc_correction;
+  header.time_boot_uS = get_time_boot_us();
+  header.spare_crc = nand_ring_crc8((uint8_t *)&header,
+                                    sizeof(header) - sizeof(header.spare_crc));
+
+  header2spare(sparebuf, &header);
+  nandWritePageSpare(nandp, current_blk, current_page, sparebuf, pss);
+  // TODO: check written status and set bad mark
+
+  /* prepare next iteration */
+  current_id++;
+  current_page++;
+  osalDbgAssert(current_page <= ppb, "Overflow");
+  if (current_page == ppb) {
+    current_page = 0;
+    current_blk = next_good(current_blk);
   }
-
-  return written;
 }

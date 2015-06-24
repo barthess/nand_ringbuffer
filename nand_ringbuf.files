@@ -5,7 +5,7 @@ cli/cli_cmd.hpp
 chconf.h
 halconf.h
 halconf_community.h
-main.c
+main.cpp
 mcuconf.h
 mcuconf_community.h
 microrl.c
@@ -782,3 +782,5 @@ usbcfg.c
 usbcfg.h
 nand_test.hpp
 nand_test.cpp
+nand_worker.cpp
+nand_worker.hpp
