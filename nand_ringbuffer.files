@@ -842,8 +842,8 @@ mcuconf.h
 usbcfg.c
 usbcfg.h
 Makefile
-nand_ring2.c
-nand_ring2.h
+nand_ring.c
+nand_ring.h
 nand_log.c
 nand_log.h
 timeboot_u64.c

@@ -113,7 +113,7 @@ CSRC = $(STARTUPSRC) \
        $(CHIBIOS_CONTRIB)/os/various/bitmap.c \
        $(CHIBIOS)/os/various/syscalls.c \
        usbcfg.c \
-       nand_ring2.c \
+       nand_ring.c \
        nand_log.c \
        timeboot_u64.c
 

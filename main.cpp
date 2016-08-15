@@ -143,7 +143,7 @@ static const NandRingConfig nandringcfg = {
   &NAND
 };
 
-static NandRing2 ring;
+static NandRing nandring;
 
 static NandLog nandlog;
 
@@ -203,12 +203,12 @@ int main(void) {
 
   nand_wp_release();
 
-  nandRingObjectInit(&ring);
-  nandRingStart(&ring, &nandringcfg);
-  nandRingMount(&ring);
+  nandRingObjectInit(&nandring);
+  nandRingStart(&nandring, &nandringcfg);
+  nandRingMount(&nandring);
 
   nandLogObjectInit(&nandlog);
-  nandLogStart(&nandlog, &ring);
+  nandLogStart(&nandlog, &nandring);
   nandLogWrite(&nandlog, NULL, NAND_PAGE_SIZE);
 
   nand_wp_assert();

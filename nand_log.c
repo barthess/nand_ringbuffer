@@ -11,7 +11,7 @@
  ******************************************************************************
  */
 #define FETCH_TIMEOUT     (MS2ST(200))
-#define NAND_PAGE_SIZE    2048 // TODO: delete hardcode
+//#define NAND_PAGE_SIZE    2048 // TODO: delete hardcode
 
 /*
  ******************************************************************************
@@ -31,11 +31,11 @@
  ******************************************************************************
  */
 
-static msg_t nand_mailbox_buffer[NAND_BUFFER_COUNT];
-MAILBOX_DECL(nand_mailbox, nand_mailbox_buffer, NAND_BUFFER_COUNT);
+//static msg_t nand_mailbox_buffer[NAND_BUFFER_COUNT];
+//MAILBOX_DECL(nand_mailbox, nand_mailbox_buffer, NAND_BUFFER_COUNT);
 
-MEMORYPOOL_DECL(nand_mempool, NAND_PAGE_SIZE, NULL) ;
-static uint8_t nand_mempool_buffer[NAND_PAGE_SIZE * NAND_BUFFER_COUNT];
+//MEMORYPOOL_DECL(nand_mempool, NAND_PAGE_SIZE, NULL) ;
+//static uint8_t nand_mempool_buffer[NAND_PAGE_SIZE * NAND_BUFFER_COUNT];
 
 /*
  ******************************************************************************
@@ -51,8 +51,10 @@ static uint8_t nand_mempool_buffer[NAND_PAGE_SIZE * NAND_BUFFER_COUNT];
  */
 static void post_full_buffer(NandLog *log) {
 
-  msg_t msg = (msg_t)(log->storage.cur - NAND_PAGE_SIZE);
-  chMBPost(log->mb, msg, TIME_IMMEDIATE);
+  const size_t pagesize = log->ring->config->nandp->config->page_data_size;
+  msg_t msg = (msg_t)(log->btip - pagesize);
+
+  chMBPost(&log->mb, msg, TIME_IMMEDIATE);
 }
 
 /**
@@ -60,11 +62,10 @@ static void post_full_buffer(NandLog *log) {
  * @param log
  */
 void zero_tail(NandLog *log) {
-  NandBuffer *storage = &log->storage;
 
-  if ((NULL != storage->cur) && (storage->free > 0)) {
-    memset(storage->cur, 0, storage->free);
-    storage->cur += storage->free;
+  if ((NULL != log->btip) && (log->bfree > 0)) {
+    memset(log->btip, 0, log->bfree);
+    log->btip += log->bfree;
   }
 }
 
@@ -78,20 +79,20 @@ static THD_FUNCTION(NandWorker, arg) {
   uint8_t *data = NULL;
 
   while (! chThdShouldTerminateX()) {
-    if (MSG_OK == chMBFetch(self->mb, (msg_t *)(&data), FETCH_TIMEOUT)) {
+    if (MSG_OK == chMBFetch(&self->mb, (msg_t *)(&data), FETCH_TIMEOUT)) {
       nandRingWritePage(self->ring, data);
-      chPoolFree(self->storage.mempool, data);
+      chPoolFree(&self->mempool, data);
     }
   }
 
   /* flush data and free all allocated buffers if any */
   osalSysLock();
-  size_t used = chMBGetUsedCountI(self->mb);
+  size_t used = chMBGetUsedCountI(&self->mb);
   osalSysUnlock();
   while (used--) {
-    chMBFetch(self->mb, (msg_t *)(&data), TIME_IMMEDIATE);
+    chMBFetch(&self->mb, (msg_t *)(&data), TIME_IMMEDIATE);
     nandRingWritePage(self->ring, data);
-    chPoolFree(self->storage.mempool, data);
+    chPoolFree(&self->mempool, data);
   }
 
   chThdExit(MSG_OK);
@@ -108,14 +109,16 @@ static THD_FUNCTION(NandWorker, arg) {
  * @param log
  */
 void nandLogObjectInit(NandLog *log) {
-  log->mb = NULL;
+
+  chMBObjectInit(&log->mb, log->mailbox_buf, NAND_BUFFER_COUNT);
+
   log->worker = NULL;
   log->ring = NULL;
   log->state = NAND_LOG_STOP;
 
-  log->storage.free = 0;
-  log->storage.cur = NULL;
-  log->storage.mempool = NULL;
+  log->bfree = 0;
+  log->btip = NULL;
+  log->mempool_buf = NULL;
 }
 
 /**
@@ -123,18 +126,22 @@ void nandLogObjectInit(NandLog *log) {
  * @param log
  * @param ring
  */
-void nandLogStart(NandLog *log, NandRing2 *ring) {
+void nandLogStart(NandLog *log, NandRing *ring) {
 
   osalDbgCheck((NULL != log) && (NULL != ring));
   osalDbgCheck(NAND_RING_MOUNTED == ring->state);
+  const size_t pagesize = ring->config->nandp->config->page_data_size;
 
-  log->mb = &nand_mailbox;
+  /* pool pointer does not nulls during stop procedure */
+  if (NULL == log->mempool_buf) {
+    log->mempool_buf = chCoreAlloc(pagesize * NAND_BUFFER_COUNT);
+    chPoolObjectInit(&log->mempool, pagesize, NULL);
+    chPoolLoadArray(&log->mempool, log->mempool_buf, NAND_BUFFER_COUNT);
+  }
+
   log->ring = ring;
-
-  chPoolLoadArray(&nand_mempool, nand_mempool_buffer, NAND_BUFFER_COUNT);
-  log->storage.free = NAND_PAGE_SIZE;
-  log->storage.mempool = &nand_mempool;
-  log->storage.cur = chPoolAlloc(&nand_mempool);
+  log->bfree = pagesize;
+  log->btip = chPoolAlloc(&log->mempool);
 
   log->worker = chThdCreateStatic(NandWorkerThreadWA, sizeof(NandWorkerThreadWA),
                                   NORMALPRIO, NandWorker, log);
@@ -149,45 +156,45 @@ void nandLogStart(NandLog *log, NandRing2 *ring) {
  * @param len
  * @note      There is no checks of mailbox post status because it has the
  *            same size as memory pool.
- * @return    size of actually written data
+ * @return    Size of actually written data.
  */
 size_t nandLogWrite(NandLog *log, const uint8_t *data, size_t len) {
 
   osalDbgCheck((NULL != log) && (NULL != data) && (0 != len));
   osalDbgCheck(NAND_LOG_READY == log->state);
   size_t written = 0;
-  NandBuffer *storage = &log->storage;
+  const size_t pagesize = log->ring->config->nandp->config->page_data_size;
 
   /* first look for available buffers and try to allocate new one
      if all of them was exhausted during previouse operation */
-  if (NULL == storage->cur) {
-    storage->cur = chPoolAlloc(storage->mempool);
-    if (NULL == storage->cur) {
+  if (NULL == log->btip) {
+    log->btip = chPoolAlloc(&log->mempool);
+    if (NULL == log->btip) {
       return 0;
     }
   }
 
   /* write main data block */
-  while (len >= storage->free) {
-    memcpy(storage->cur, data, storage->free);
+  while (len >= log->bfree) {
+    memcpy(log->btip, data, log->bfree);
 
-    len -= storage->free;
-    written += storage->free;
-    storage->cur += len;
+    len -= log->bfree;
+    written += log->bfree;
+    log->btip += len;
     post_full_buffer(log);
 
-    storage->free = NAND_PAGE_SIZE;
-    storage->cur  = chPoolAlloc(storage->mempool);
-    if (NULL == storage->cur) {
+    log->bfree = pagesize;
+    log->btip  = chPoolAlloc(&log->mempool);
+    if (NULL == log->btip) {
       /* memory pool exhausted */
       return written;
     }
   }
 
   /* write data tail if any */
-  memcpy(storage->cur, data, len);
-  storage->free -= len;
-  storage->cur += len;
+  memcpy(log->btip, data, len);
+  log->bfree -= len;
+  log->btip += len;
   written += len;
 
   return written;

@@ -1,7 +1,7 @@
 #ifndef NAND_LOG_H_
 #define NAND_LOG_H_
 
-#include "nand_ring2.h"
+#include "nand_ring.h"
 
 #define NAND_BUFFER_COUNT       3
 
@@ -15,20 +15,17 @@ typedef enum {
  *
  */
 typedef struct {
-  size_t            free;
-  uint8_t           *cur;
-  memory_pool_t     *mempool;
-} NandBuffer;
-
-/**
- *
- */
-typedef struct {
-  NandRing2         *ring;
+  NandRing          *ring;
   thread_t          *worker;
-  mailbox_t         *mb;
   nand_log_state_t  state;
-  NandBuffer        storage;
+
+  mailbox_t         mb;
+  msg_t             mailbox_buf[NAND_BUFFER_COUNT];
+
+  size_t            bfree;
+  uint8_t           *btip;
+  memory_pool_t     mempool;
+  uint8_t           *mempool_buf;
 } NandLog;
 
 
@@ -36,7 +33,7 @@ typedef struct {
 extern "C" {
 #endif
   void nandLogObjectInit(NandLog *log);
-  void nandLogStart(NandLog *log, NandRing2 *ring);
+  void nandLogStart(NandLog *log, NandRing *ring);
   size_t nandLogWrite(NandLog *log, const uint8_t *data, size_t len);
   void nandLogStop(NandLog *log);
 #ifdef __cplusplus

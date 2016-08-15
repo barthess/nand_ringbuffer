@@ -3,7 +3,7 @@
 #include "ch.h"
 #include "hal.h"
 
-#include "nand_ring2.h"
+#include "nand_ring.h"
 #include "timeboot_u64.h"
 
 /*
@@ -58,7 +58,7 @@
 /**
  *
  */
-static uint32_t next_good(NandRing2 *ring, uint32_t current) {
+static uint32_t next_good(NandRing *ring, uint32_t current) {
 
   const uint32_t end_blk = ring->config->end_blk;
   const uint32_t start_blk = ring->config->start_blk;
@@ -81,7 +81,7 @@ static uint32_t next_good(NandRing2 *ring, uint32_t current) {
  * @param page
  * @return
  */
-static uint8_t read_session_num(NandRing2 *ring, uint32_t blk, uint32_t page) {
+static uint8_t read_session_num(NandRing *ring, uint32_t blk, uint32_t page) {
   NandPageHeader tmp;
   nandReadPageSpare(ring->config->nandp, blk, page, (uint8_t*)&tmp, sizeof(tmp));
   return tmp.session;
@@ -90,7 +90,7 @@ static uint8_t read_session_num(NandRing2 *ring, uint32_t blk, uint32_t page) {
 /**
  * @brief   Calculate total amount of available good blocks
  */
-static uint32_t get_total_good(NandRing2 *ring) {
+static uint32_t get_total_good(NandRing *ring) {
   uint32_t ret = 0;
   uint32_t current = ring->config->start_blk;
 
@@ -151,7 +151,7 @@ static void header2spare(uint8_t *buf, const NandPageHeader *header) {
  * @brief nandRingObjectInit
  * @param ring
  */
-void nandRingObjectInit(NandRing2 *ring) {
+void nandRingObjectInit(NandRing *ring) {
 
   osalDbgCheck(NULL != ring);
 
@@ -165,7 +165,7 @@ void nandRingObjectInit(NandRing2 *ring) {
  * @param ring
  * @param config
  */
-void nandRingStart(NandRing2 *ring, const NandRingConfig *config) {
+void nandRingStart(NandRing *ring, const NandRingConfig *config) {
 
   osalDbgCheck((NULL != ring) && (NULL != config) && (NULL != config->nandp));
   osalDbgAssert(config->end_blk > config->start_blk + MIN_RING_BLOCKS,
@@ -188,7 +188,7 @@ void nandRingStart(NandRing2 *ring, const NandRingConfig *config) {
 /**
  *
  */
-bool nandRingMkfs(NandRing2 *ring) {
+bool nandRingMkfs(NandRing *ring) {
   // only unmounted flash may be formatted
   osalDbgCheck(NAND_RING_IDLE == ring->state);
 
@@ -214,7 +214,7 @@ bool nandRingMkfs(NandRing2 *ring) {
 /**
  *
  */
-bool nandRingMount(NandRing2 *ring) {
+bool nandRingMount(NandRing *ring) {
 
   osalDbgCheck(NULL != ring);
   osalDbgCheck(NAND_RING_IDLE == ring->state);
@@ -276,14 +276,14 @@ bool nandRingMount(NandRing2 *ring) {
 /**
  * @brief NandRing::umount
  */
-void nandRingUmount(NandRing2 *ring) {
+void nandRingUmount(NandRing *ring) {
   ring->state = NAND_RING_IDLE;
 }
 
 /**
  * @brief NandRing::umount
  */
-void nandRingStop(NandRing2 *ring) {
+void nandRingStop(NandRing *ring) {
   ring->state = NAND_RING_STOP;
   ring->config = NULL;
 }
@@ -293,7 +293,7 @@ void nandRingStop(NandRing2 *ring) {
  * @note    Buffer must be the same size as page.
  * @note    This function able to write only single whole page at time.
  */
-void nandRingWritePage(NandRing2 *ring, const uint8_t *data) {
+void nandRingWritePage(NandRing *ring, const uint8_t *data) {
 
   osalDbgCheck((NULL != data) && (NULL != ring));
   osalDbgCheck(NAND_RING_MOUNTED == ring->state);

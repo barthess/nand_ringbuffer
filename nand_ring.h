@@ -1,5 +1,5 @@
-#ifndef NAND_RING2_H_
-#define NAND_RING2_H_
+#ifndef NAND_RING_H_
+#define NAND_RING_H_
 
 /**
  *
@@ -84,21 +84,21 @@ typedef struct {
   uint32_t              utc_correction;
   nand_ring_state_t     state;
   uint32_t              total_good_blk; // mostly for diagnostics using console
-} NandRing2;
+} NandRing;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-  void nandRingObjectInit(NandRing2 *ring);
-  void nandRingStart(NandRing2 *ring, const NandRingConfig *config);
-  bool nandRingMkfs(NandRing2 *ring);
-  bool nandRingMount(NandRing2 *ring);
-  void nandRingWritePage(NandRing2 *ring, const uint8_t *data);
-  void nandRingStop(NandRing2 *ring);
+  void nandRingObjectInit(NandRing *ring);
+  void nandRingStart(NandRing *ring, const NandRingConfig *config);
+  bool nandRingMkfs(NandRing *ring);
+  bool nandRingMount(NandRing *ring);
+  void nandRingWritePage(NandRing *ring, const uint8_t *data);
+  void nandRingStop(NandRing *ring);
   void nandRingSetUtcCorrection(uint32_t correction);
   size_t nandRingSearchSessions(RingSession *result, size_t max_sessions);
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* NAND_RING2_H_ */
+#endif /* NAND_RING_H_ */
