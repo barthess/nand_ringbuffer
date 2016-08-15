@@ -25,6 +25,13 @@
 #endif
 
 /**
+ * @brief   Enables the FSMC subsystem.
+ */
+#if !defined(HAL_USE_FSMC) || defined(__DOXYGEN__)
+#define HAL_USE_FSMC                TRUE
+#endif
+
+/**
  * @brief   Enables the NAND subsystem.
  */
 #if !defined(HAL_USE_NAND) || defined(__DOXYGEN__)
@@ -36,6 +43,20 @@
  */
 #if !defined(HAL_USE_ONEWIRE) || defined(__DOXYGEN__)
 #define HAL_USE_ONEWIRE             FALSE
+#endif
+
+/**
+ * @brief   Enables the EICU subsystem.
+ */
+#if !defined(HAL_USE_EICU) || defined(__DOXYGEN__)
+#define HAL_USE_EICU                FALSE
+#endif
+
+/**
+ * @brief   Enables the CRC subsystem.
+ */
+#if !defined(HAL_USE_CRC) || defined(__DOXYGEN__)
+#define HAL_USE_CRC                 FALSE
 #endif
 
 /*===========================================================================*/

@@ -5,7 +5,7 @@
 
 # Compiler options here.
 ifeq ($(USE_OPT),)
-  USE_OPT = -O2 -ggdb -fomit-frame-pointer -falign-functions=16
+  USE_OPT = -O0 -ggdb -fomit-frame-pointer -falign-functions=16
 endif
 
 # C specific options here (added to USE_OPT).
@@ -80,22 +80,25 @@ endif
 PROJECT = ch
 
 # Imported source files and paths
-CHIBIOS = ../chibios-git
+CHIBIOS = ../ChibiOS-RT
+CHIBIOS_CONTRIB = ../ChibiOS-Contrib
 # Startup files.
-include $(CHIBIOS)/os/common/ports/ARMCMx/compilers/GCC/mk/startup_stm32f4xx.mk
+include $(CHIBIOS)/os/common/startup/ARMCMx/compilers/GCC/mk/startup_stm32f4xx.mk
 # HAL-OSAL files (optional).
-include $(CHIBIOS)/community/os/hal/hal.mk
-include $(CHIBIOS)/community/os/hal/ports/STM32/STM32F4xx/platform.mk
-include $(CHIBIOS)/community/os/hal/boards/NONSTANDARD_STM32F4_BARTHESS2/board.mk
+include $(CHIBIOS_CONTRIB)/os/hal/hal.mk
+include $(CHIBIOS_CONTRIB)/os/hal/ports/STM32/STM32F4xx/platform.mk
+include $(CHIBIOS_CONTRIB)/os/hal/boards/NONSTANDARD_STM32F4_BARTHESS2/board.mk
 include $(CHIBIOS)/os/hal/osal/rt/osal.mk
 # RTOS files (optional).
 include $(CHIBIOS)/os/rt/rt.mk
-include $(CHIBIOS)/os/rt/ports/ARMCMx/compilers/GCC/mk/port_v7m.mk
-# other
+include $(CHIBIOS)/os/common/ports/ARMCMx/compilers/GCC/mk/port_v7m.mk
+# Other files (optional).
+include $(CHIBIOS)/os/hal/lib/streams/streams.mk
 include $(CHIBIOS)/os/various/cpp_wrappers/chcpp.mk
+#include $(CHIBIOS)/test/rt/test.mk
 
 # Define linker script file here
-LDSCRIPT= $(STARTUPLD)/STM32F407xG.ld
+LDSCRIPT = $(STARTUPLD)/STM32F407xG.ld
 
 # C sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
@@ -106,23 +109,18 @@ CSRC = $(STARTUPSRC) \
        $(HALSRC) \
        $(PLATFORMSRC) \
        $(BOARDSRC) \
-       $(CHIBIOS)/community/os/various/bitmap.c \
+       $(STREAMSSRC) \
+       $(CHIBIOS_CONTRIB)/os/various/bitmap.c \
        $(CHIBIOS)/os/various/syscalls.c \
-       $(CHIBIOS)/os/hal/lib/streams/chprintf.c \
-       $(CHIBIOS)/os/hal/lib/streams/memstreams.c \
        usbcfg.c \
-       microrl.c
+       nand_ring2.c \
+       nand_log.c \
+       timeboot_u64.c
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
 CPPSRC =  $(CHCPPSRC) \
-         nand_ring.cpp \
-         nand_test.cpp \
-         nand_worker.cpp \
-         ui.cpp \
-         cli/cli.cpp  \
-         cli/cli_cmd.cpp \
-         main.cpp \
+         main.cpp
 
 # C sources to be compiled in ARM mode regardless of the global setting.
 # NOTE: Mixing ARM and THUMB mode enables the -mthumb-interwork compiler
@@ -145,15 +143,14 @@ TCSRC =
 TCPPSRC =
 
 # List ASM source files here
-ASMSRC = $(STARTUPASM) $(PORTASM) $(OSALASM)
+ASMSRC =
+ASMXSRC = $(STARTUPASM) $(PORTASM) $(OSALASM)
 
-INCDIR = $(STARTUPINC) $(KERNINC) $(PORTINC) $(OSALINC) \
-         $(HALINC) $(PLATFORMINC) $(BOARDINC) \
+INCDIR = $(CHIBIOS)/os/license \
+         $(STARTUPINC) $(KERNINC) $(PORTINC) $(OSALINC) \
+         $(HALINC) $(PLATFORMINC) $(BOARDINC) $(TESTINC) $(CHCPPINC) \
          $(CHIBIOS)/os/various \
-         $(CHIBIOS)/os/hal/lib/streams \
-         $(CHIBIOS)/os/various/cpp_wrappers \
-         $(CHIBIOS)/community/os/various \
-         cli
+         $(CHIBIOS_CONTRIB)/os/various
 
 
 #
@@ -222,5 +219,5 @@ ULIBS =
 # End of user defines
 ##############################################################################
 
-RULESPATH = $(CHIBIOS)/os/common/ports/ARMCMx/compilers/GCC
+RULESPATH = $(CHIBIOS)/os/common/startup/ARMCMx/compilers/GCC
 include $(RULESPATH)/rules.mk

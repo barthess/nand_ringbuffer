@@ -48,9 +48,7 @@
 #include "hal.h"
 
 #include "bitmap.h"
-#include "nand_test.hpp"
-
-#include "ui.hpp"
+#include "nand_log.h"
 
 /*
  ******************************************************************************
@@ -74,7 +72,7 @@
 #define NAND_COL_WRITE_CYCLES     2
 
 #define NAND_TEST_START_BLOCK     1200
-#define NAND_TEST_END_BLOCK       1220
+#define NAND_TEST_END_BLOCK       1240
 
 #if STM32_NAND_USE_FSMC_NAND1
   #define NAND                    NANDD1
@@ -139,7 +137,15 @@ static const NANDConfig nandcfg = {
                                  (FSMCNAND_TIME_WAIT << 8) | FSMCNAND_TIME_SET),
 };
 
-static NandRing ring(1023, 2047);
+static const NandRingConfig nandringcfg = {
+  NAND_TEST_START_BLOCK,
+  NAND_TEST_END_BLOCK,
+  &NAND
+};
+
+static NandRing2 ring;
+
+static NandLog nandlog;
 
 /*
  ******************************************************************************
@@ -189,19 +195,22 @@ int main(void) {
   halInit();
   chSysInit();
 
-  uiInit();
-
   chTMObjectInit(&tmu_driver_start);
   chTMStartMeasurementX(&tmu_driver_start);
   nandStart(&NAND, &nandcfg, &badblock_map);
   chTMStopMeasurementX(&tmu_driver_start);
 
-  uint8_t *sparebuf_p = ((uint8_t *)chCoreAlloc(nandcfg.page_spare_size));
-  osalDbgAssert(nullptr != sparebuf_p, "Can not allocate memory");
 
   nand_wp_release();
-  ring.start(&NANDD1, sparebuf_p);
-  NandTest(ring);
+
+  nandRingObjectInit(&ring);
+  nandRingStart(&ring, &nandringcfg);
+  nandRingMount(&ring);
+
+  nandLogObjectInit(&nandlog);
+  nandLogStart(&nandlog, &ring);
+  nandLogWrite(&nandlog, NULL, NAND_PAGE_SIZE);
+
   nand_wp_assert();
 
   /*

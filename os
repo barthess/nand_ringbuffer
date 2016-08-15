@@ -1,1 +1,1 @@
-../chibios-git/os
+../ChibiOS-RT/os
