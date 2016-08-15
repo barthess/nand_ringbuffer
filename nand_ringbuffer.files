@@ -839,10 +839,6 @@ halconf.h
 halconf_community.h
 main.cpp
 mcuconf.h
-mcuconf_community.h
-microrl.c
-microrl.h
-microrl_config.h
 usbcfg.c
 usbcfg.h
 Makefile
