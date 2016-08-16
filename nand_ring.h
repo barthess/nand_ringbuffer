@@ -34,7 +34,7 @@ typedef struct __attribute__((packed)) {
    * @details   Increments on every file system mount. Used for quicker
    *            session search.
    */
-  uint8_t   session;
+  //uint8_t   session;
   /**
    * @brief     Seal CRC for this structure
    */
@@ -80,10 +80,9 @@ typedef struct {
   uint32_t              cur_blk;
   uint32_t              cur_page;
   uint64_t              cur_id;
-  uint8_t               cur_session;
+  //uint8_t               cur_session;
   uint32_t              utc_correction;
   nand_ring_state_t     state;
-  uint32_t              total_good_blk; // mostly for diagnostics using console
 } NandRing;
 
 #ifdef __cplusplus
@@ -91,7 +90,6 @@ extern "C" {
 #endif
   void nandRingObjectInit(NandRing *ring);
   void nandRingStart(NandRing *ring, const NandRingConfig *config);
-  bool nandRingMkfs(NandRing *ring);
   bool nandRingMount(NandRing *ring);
   void nandRingWritePage(NandRing *ring, const uint8_t *data);
   void nandRingStop(NandRing *ring);

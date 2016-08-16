@@ -71,8 +71,8 @@
 #define NAND_ROW_WRITE_CYCLES     3
 #define NAND_COL_WRITE_CYCLES     2
 
-#define NAND_TEST_START_BLOCK     1200
-#define NAND_TEST_END_BLOCK       1240
+#define NAND_TEST_START_BLOCK     1024
+#define NAND_TEST_END_BLOCK       2048
 
 #if STM32_NAND_USE_FSMC_NAND1
   #define NAND                    NANDD1
