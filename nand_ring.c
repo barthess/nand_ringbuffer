@@ -7,8 +7,16 @@
 #include "timeboot_u64.h"
 
 /*
- * На старте сканируем первые страницы блоков с нулевого по последний.
- * Последним считаем блок с максимальным номером
+ * После запуска считаем, что предыдущий раз был неудачен по причине
+ * отключения электричества, поэтому конец лога записываем заново:
+ * 1) ощищаем следующий блок
+ * 2) копируем заведомо целые страницы в него
+ * 3) ощищаем предыдущий
+ * 4) копируем страницы обратно
+ *
+ * На старте сканируем первые страницы блоков с нулевого по последний
+ * 1) Последним считаем блок с максимальным номером
+ * 2) Если номера совпадают - значит был прерван процесс восстановления: повторяем его.
  *
  * Форматирование - это простая очистка всех блоков
  *
@@ -29,6 +37,8 @@
 #define MIN_RING_BLOCKS           16 // minimal meaningful storage size
 #define MIN_GOOD_BLOCKS           4 // minimal allowable good blocks count
 
+#define SCRATCHPAD_SIZE           (2048 + 64)
+
 /*
  ******************************************************************************
  * EXTERNS
@@ -46,6 +56,8 @@
  * GLOBAL VARIABLES
  ******************************************************************************
  */
+
+static uint8_t scratchpad[SCRATCHPAD_SIZE];
 
 /*
  ******************************************************************************
@@ -229,8 +241,9 @@ bool nandRingMount(NandRing *ring) {
   NandPageHeader header;
 
   ring->total_good_blk = get_total_good(ring);
-  if (ring->total_good_blk < MIN_GOOD_BLOCKS)
+  if (ring->total_good_blk < MIN_GOOD_BLOCKS) {
     return OSAL_FAILED;
+  }
 
   ring->cur_blk = next_good(ring, ring->config->end_blk); /* find first good block */
   last_blk = ring->cur_blk;
@@ -255,6 +268,27 @@ bool nandRingMount(NandRing *ring) {
       last_page = p;
       last_id = header.id;
     }
+  }
+
+  /* "recover" latest data */
+  ring->cur_blk = next_good(ring, last_blk);
+  nandErase(nandp, ring->cur_blk);
+  // TODO: check erase status and set bad flag if needed
+  for (size_t p=0; p<last_page; p++) {
+    nandReadPageWhole(nandp, last_blk, p, scratchpad, SCRATCHPAD_SIZE);
+    nandWritePageWhole(nandp, ring->cur_blk, p, scratchpad, SCRATCHPAD_SIZE);
+    // TODO: check returned written status
+    // TODO: check ECC
+    // TODO: use internal buffers for rewriting data
+  }
+  nandErase(nandp, last_blk);
+  // TODO: check erase status and set bad flag if needed
+  for (size_t p=0; p<last_page; p++) {
+    nandReadPageWhole(nandp, ring->cur_blk, p, scratchpad, SCRATCHPAD_SIZE);
+    nandWritePageWhole(nandp, last_blk, p, scratchpad, SCRATCHPAD_SIZE);
+    // TODO: check returned written status
+    // TODO: check ECC
+    // TODO: use internal buffers for rewriting data
   }
 
   /* set "pointers" to the begining of the free area */
