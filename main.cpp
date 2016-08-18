@@ -49,6 +49,7 @@
 
 #include "bitmap.h"
 #include "nand_log.h"
+#include "nand_ring_test.h"
 
 /*
  ******************************************************************************
@@ -71,9 +72,6 @@
 #define NAND_ROW_WRITE_CYCLES     3
 #define NAND_COL_WRITE_CYCLES     2
 
-#define NAND_TEST_START_BLOCK     1024
-#define NAND_TEST_END_BLOCK       2048
-
 #if STM32_NAND_USE_FSMC_NAND1
   #define NAND                    NANDD1
 #elif STM32_NAND_USE_FSMC_NAND2
@@ -95,9 +93,6 @@
  * PROTOTYPES
  ******************************************************************************
  */
-#if STM32_NAND_USE_EXT_INT
-#error "External interrupt mode is not a goal of this test"
-#endif
 
 /*
  ******************************************************************************
@@ -137,16 +132,6 @@ static const NANDConfig nandcfg = {
                                  (FSMCNAND_TIME_WAIT << 8) | FSMCNAND_TIME_SET),
 };
 
-static const NandRingConfig nandringcfg = {
-  NAND_TEST_START_BLOCK,
-  NAND_TEST_END_BLOCK,
-  &NAND
-};
-
-static NandRing nandring;
-
-static NandLog nandlog;
-
 /*
  ******************************************************************************
  ******************************************************************************
@@ -158,7 +143,7 @@ static void nand_wp_assert(void)   {palClearPad(GPIOB, GPIOB_NAND_WP);}
 static void nand_wp_release(void)  {palSetPad(GPIOB, GPIOB_NAND_WP);}
 static void red_led_on(void)       {palSetPad(GPIOI, GPIOI_LED_R);}
 static void red_led_off(void)      {palClearPad(GPIOI, GPIOI_LED_R);}
-
+static void green_led_toggle(void) {palTogglePad(GPIOI, GPIOI_LED_G);}
 
 ///*
 // * Benchmark for page based brute force search
@@ -173,6 +158,19 @@ static void red_led_off(void)      {palClearPad(GPIOI, GPIOI_LED_R);}
 //    }
 //  }
 //}
+
+static THD_WORKING_AREA(BlinkThreadWA, 128);
+static THD_FUNCTION(BlinkThread, arg) {
+  (void)arg;
+
+  while (! chThdShouldTerminateX()) {
+    chThdSleepMilliseconds(100);
+    red_led_on();
+    chThdSleepMilliseconds(100);
+    red_led_off();
+  }
+  chThdExit(MSG_OK);
+}
 
 /*
  ******************************************************************************
@@ -195,6 +193,9 @@ int main(void) {
   halInit();
   chSysInit();
 
+  thread_t *blink_thd = chThdCreateStatic(BlinkThreadWA,
+      sizeof(BlinkThreadWA), NORMALPRIO + 1, BlinkThread, NULL);
+
   chTMObjectInit(&tmu_driver_start);
   chTMStartMeasurementX(&tmu_driver_start);
   nandStart(&NAND, &nandcfg, &badblock_map);
@@ -202,25 +203,22 @@ int main(void) {
 
 
   nand_wp_release();
+  nandRingTest(&NAND);
 
-  nandRingObjectInit(&nandring);
-  nandRingStart(&nandring, &nandringcfg);
-  nandRingMount(&nandring);
-
-  nandLogObjectInit(&nandlog);
-  nandLogStart(&nandlog, &nandring);
-  nandLogWrite(&nandlog, NULL, NAND_PAGE_SIZE);
+//  nandLogObjectInit(&nandlog);
+//  nandLogStart(&nandlog, &nandring);
+//  nandLogWrite(&nandlog, NULL, NAND_PAGE_SIZE);
 
   nand_wp_assert();
 
   /*
    * Normal main() thread activity, in this demo it does nothing.
    */
+  chThdTerminate(blink_thd);
+  chThdWait(blink_thd);
   while (true) {
-    chThdSleepMilliseconds(500);
-    red_led_on();
-    chThdSleepMilliseconds(500);
-    red_led_off();
+    chThdSleepMilliseconds(1000);
+    green_led_toggle();
   }
 }
 

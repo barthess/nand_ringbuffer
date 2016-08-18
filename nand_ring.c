@@ -5,6 +5,7 @@
 
 #include "nand_ring.h"
 #include "timeboot_u64.h"
+#include "soft_crc.h"
 
 /*
  * После запуска считаем, что предыдущий раз был неудачен по причине
@@ -54,12 +55,10 @@
 #define PAGE_ID_WASTED            (uint64_t)0x0 /* так же используется в случае сбоя CRC */
 #define PAGE_ID_FIRST             (uint64_t)0x1
 
-#define LAST_BLOCK_NOT_FOUND      0xFFFFFFFF
+#define BLOCK_NOT_FOUND           0xFFFFFFFF
 #define LAST_PAGE_NOT_FOUND       0xFFFFFFFF
 
-#define COMPILE_TIME_UTC          1400000000
-#define MIN_RING_BLOCKS           16 // minimal meaningful storage size
-#define MIN_GOOD_BLOCKS           4 // minimal allowable good blocks count
+#define MIN_RING_SIZE             64
 
 #define SCRATCHPAD_SIZE           (2048 + 64)
 
@@ -96,20 +95,23 @@ static uint8_t scratchpad[SCRATCHPAD_SIZE];
  */
 static uint32_t next_good(const NandRing *ring, uint32_t current) {
 
-  const uint32_t end = ring->config->end_blk;
+  const uint32_t len   = ring->config->len;
   const uint32_t start = ring->config->start_blk;
-  NANDDriver *nandp = ring->config->nandp;
+  NANDDriver *nandp    = ring->config->nandp;
+  uint32_t b = current;
 
-  // TODO: this is infinite loop when no good blocks found
-  while (true) {
-    current++;
-    if (current > end) {
-      current = start;
+  do {
+    b++;
+    if (b == (start + len)) {
+      b = start;
     }
-    if (! nandIsBad(nandp, current)) {
-      return current;
+    if (! nandIsBad(nandp, b)) {
+      return b;
     }
-  }
+  } while (b != current); /* search wrapped without success */
+
+  // TODO: check this value in calling functions
+  return BLOCK_NOT_FOUND;
 }
 
 /**
@@ -117,15 +119,16 @@ static uint32_t next_good(const NandRing *ring, uint32_t current) {
  */
 static uint32_t get_total_good(NandRing *ring) {
   uint32_t ret = 0;
-  uint32_t current = ring->config->start_blk;
+  NANDDriver *nandp = ring->config->nandp;
+  const uint32_t start = ring->config->start_blk;
+  const uint32_t len = ring->config->len;
 
-  while (current <= ring->config->end_blk) {
-    NANDDriver *nandp = ring->config->nandp;
-    if (! nandIsBad(nandp, current)) {
+  for (size_t b=0; b<len; b++) {
+    if (! nandIsBad(nandp, start+b)) {
       ret++;
     }
-    current++;
   }
+
   return ret;
 }
 
@@ -135,14 +138,8 @@ static uint32_t get_total_good(NandRing *ring) {
  * @param len
  * @return
  */
-static uint8_t nand_ring_crc8(const uint8_t *data, size_t len) {
-  uint8_t ret = 0;
-
-  for(size_t i=0; i<len; i++) {
-    ret += data[i];
-  }
-
-  return ret;
+static uint8_t nand_ring_crc32(const uint8_t *data, size_t len) {
+  return softcrc32(data, len, 0xFFFFFFFF);
 }
 
 /**
@@ -150,16 +147,25 @@ static uint8_t nand_ring_crc8(const uint8_t *data, size_t len) {
  * @return
  */
 static bool header_crc_valid(const uint8_t *buf) {
-  uint8_t crc;
+  uint32_t crc;
   const NandPageHeader *header = (const NandPageHeader *)buf;
 
-  crc = nand_ring_crc8(buf, sizeof(*header) - sizeof(header->spare_crc));
+  crc = nand_ring_crc32(buf, sizeof(*header) - sizeof(header->spare_crc));
   if (crc != header->spare_crc) {
     return OSAL_SUCCESS;
   }
   else {
     return OSAL_FAILED;
   }
+}
+
+/**
+ *
+ */
+static uint32_t calc_header_crc(const NandPageHeader *header) {
+
+  const size_t len = sizeof(*header) - sizeof(header->spare_crc);
+  return nand_ring_crc32((const uint8_t *)header, len);
 }
 
 /**
@@ -202,7 +208,7 @@ static uint64_t read_page_id(const NandRing *ring, uint32_t blk, uint32_t page) 
  * @return
  */
 static uint32_t first_good(const NandRing *ring) {
-  return next_good(ring, ring->config->end_blk);
+  return next_good(ring, ring->config->start_blk + ring->config->len - 1);
 }
 
 /**
@@ -213,19 +219,20 @@ static uint32_t first_good(const NandRing *ring) {
 static uint32_t last_written_block(const NandRing *ring) {
 
   /* very first block of ring */
-  uint32_t blk = first_good(ring);
-  uint32_t last_blk = LAST_BLOCK_NOT_FOUND;
+  const uint32_t first = first_good(ring);
+  uint32_t last_blk = BLOCK_NOT_FOUND;
   uint64_t last_id  = PAGE_ID_FIRST;
 
-  /* iterate blocks until tip value wraps */
-  while (next_good(ring, blk) > blk) {
-    const uint64_t id = read_page_id(ring, blk, 0);
+  /* iterate over good blocks until block number wraps */
+  uint32_t b = first;
+  do {
+    const uint64_t id = read_page_id(ring, b, 0);
     if ((PAGE_ID_ERASED != id) && (id >= last_id)) {
-      last_blk = blk;
+      last_blk = b;
       last_id  = id;
     }
-    blk = next_good(ring, blk);
-  }
+    b = next_good(ring, b);
+  } while (b > first);
 
   return last_blk;
 }
@@ -238,7 +245,7 @@ static uint32_t last_written_block(const NandRing *ring) {
  */
 static uint32_t last_written_page(const NandRing *ring, uint32_t last_blk) {
 
-  osalDbgCheck(LAST_BLOCK_NOT_FOUND != last_blk);
+  osalDbgCheck(BLOCK_NOT_FOUND != last_blk);
 
   uint64_t last_id = PAGE_ID_FIRST;
   uint32_t last_page = LAST_PAGE_NOT_FOUND;
@@ -317,7 +324,7 @@ void nandRingObjectInit(NandRing *ring) {
 
   ring->config = NULL;
   ring->state = NAND_RING_UNINIT;
-  /* other fields will be initialized in start() method */
+  /* other fields will be initialized during start() */
 }
 
 /**
@@ -330,18 +337,15 @@ void nandRingStart(NandRing *ring, const NandRingConfig *config) {
   osalDbgCheck((NULL != ring) && (NULL != config) && (NULL != config->nandp));
   osalDbgAssert(NAND_READY == config->nandp->state,
                 "NAND must be started externally");
-  osalDbgAssert(config->end_blk > config->start_blk + MIN_RING_BLOCKS,
-                "Such small storage size is pointless");
-  osalDbgAssert(config->end_blk < config->nandp->config->blocks, "NAND overflow");
+  osalDbgAssert((config->start_blk + config->len) <= config->nandp->config->blocks,
+                "NAND overflow");
+  osalDbgCheck(config->len >= MIN_RING_SIZE);
   osalDbgAssert(sizeof(NandPageHeader) <= config->nandp->config->page_spare_size,
                 "Not enough room in spare area");
 
-  ring->cur_blk = config->start_blk;
-  ring->cur_page = 0;
-  ring->cur_id = 0;
-  ring->utc_correction = 0;
   ring->config = config;
   ring->state = NAND_RING_IDLE;
+  /* other fields will be initialized during mount() */
 }
 
 /**
@@ -352,12 +356,12 @@ bool nandRingMount(NandRing *ring) {
   osalDbgCheck(NULL != ring);
   osalDbgCheck(NAND_RING_IDLE == ring->state);
 
-  if (get_total_good(ring) < MIN_GOOD_BLOCKS) {
+  if (get_total_good(ring) < (MIN_RING_SIZE / 2)) {
     return OSAL_FAILED;
   }
 
   uint32_t last_blk  = last_written_block(ring);
-  if (LAST_BLOCK_NOT_FOUND == last_blk) {
+  if (BLOCK_NOT_FOUND == last_blk) {
     ring->cur_blk = mkfs(ring);
     ring->cur_page = 0;
     ring->cur_id = PAGE_ID_FIRST;
@@ -373,21 +377,6 @@ bool nandRingMount(NandRing *ring) {
 
   ring->state = NAND_RING_MOUNTED;
   return OSAL_SUCCESS;
-}
-
-/**
- * @brief NandRing::umount
- */
-void nandRingUmount(NandRing *ring) {
-  ring->state = NAND_RING_IDLE;
-}
-
-/**
- * @brief NandRing::umount
- */
-void nandRingStop(NandRing *ring) {
-  ring->state = NAND_RING_STOP;
-  ring->config = NULL;
 }
 
 /**
@@ -414,8 +403,8 @@ void nandRingWritePage(NandRing *ring, const uint8_t *data) {
   header.id = ring->cur_id;
   header.utc_correction = ring->utc_correction;
   header.time_boot_uS = timebootU64();
-  header.spare_crc = nand_ring_crc8((uint8_t *)&header,
-                                    sizeof(header) - sizeof(header.spare_crc));
+  header.spare_crc = calc_header_crc(&header);
+
   header2spare(sparebuf, &header);
   nandWritePageSpare(nandp, ring->cur_blk, ring->cur_page, sparebuf, pss);
   // TODO: check written status and set bad mark
@@ -451,3 +440,25 @@ size_t nandRingSearchSessions(RingSession *result, size_t max_sessions) {
   return 0;
 }
 
+/**
+ * @brief nandRingUmount
+ * @param ring
+ */
+void nandRingUmount(NandRing *ring) {
+
+  osalDbgCheck(NULL != ring);
+  ring->state = NAND_RING_IDLE;
+}
+
+/**
+ * @brief nandRingStop
+ * @param ring
+ */
+void nandRingStop(NandRing *ring) {
+
+  osalDbgCheck(NULL != ring);
+  osalDbgCheck(NAND_RING_IDLE == ring->state);
+
+  ring->state = NAND_RING_STOP;
+  ring->config = NULL;
+}

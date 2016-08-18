@@ -38,7 +38,7 @@ typedef struct __attribute__((packed)) {
   /**
    * @brief     Seal CRC for this structure
    */
-  uint8_t   spare_crc;
+  uint32_t   spare_crc;
 } NandPageHeader;
 
 /**
@@ -67,9 +67,9 @@ typedef enum {
  *
  */
 typedef struct {
-  const uint32_t  start_blk; // first block of storage
-  const uint32_t  end_blk;   // last block of storage
-  NANDDriver      *nandp;
+  uint32_t    start_blk;  // first block of storage
+  size_t      len;        // length of ring in blocks
+  NANDDriver  *nandp;
 } NandRingConfig;
 
 /**
@@ -91,6 +91,7 @@ extern "C" {
   void nandRingObjectInit(NandRing *ring);
   void nandRingStart(NandRing *ring, const NandRingConfig *config);
   bool nandRingMount(NandRing *ring);
+  void nandRingUmount(NandRing *ring);
   void nandRingWritePage(NandRing *ring, const uint8_t *data);
   void nandRingStop(NandRing *ring);
   void nandRingSetUtcCorrection(uint32_t correction);

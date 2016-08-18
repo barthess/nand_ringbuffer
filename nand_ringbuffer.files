@@ -848,3 +848,10 @@ nand_log.c
 nand_log.h
 timeboot_u64.c
 timeboot_u64.h
+nand_ring_test.c
+nand_ring_test.h
+mcuconf_community.h
+libnand.c
+libnand.h
+soft_crc.c
+soft_crc.h
