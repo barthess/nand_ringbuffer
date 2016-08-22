@@ -83,6 +83,11 @@ typedef struct {
   //uint8_t               cur_session;
   uint32_t              utc_correction;
   nand_ring_state_t     state;
+  /**
+   * @brief   Debug field for NAND fails emulation.
+   * @details Denotes number of subsequent write failures.
+   */
+  uint32_t              _dbg_fake_write_faled;
 } NandRing;
 
 #ifdef __cplusplus
@@ -91,6 +96,7 @@ extern "C" {
   void nandRingObjectInit(NandRing *ring);
   void nandRingStart(NandRing *ring, const NandRingConfig *config);
   bool nandRingMount(NandRing *ring);
+  uint32_t nandRingTotalGood(const NandRing *ring);
   void nandRingUmount(NandRing *ring);
   void nandRingWritePage(NandRing *ring, const uint8_t *data);
   void nandRingStop(NandRing *ring);

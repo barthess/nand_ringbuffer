@@ -58,11 +58,49 @@ static void fill_pagebuf_rand(void *buf, size_t pagedatasize, size_t sparesize) 
   bufu8[pagedatasize + 1] = 0xFF;
 }
 
+/**
+ * @brief nand_erase_range
+ * @param nandp
+ * @param start
+ * @param len
+ * @param force_bad_erase
+ * @return
+ */
+static uint32_t nand_erase_range(NANDDriver *nandp, uint32_t start,
+                                 uint32_t len, bool force_bad_erase) {
+
+  uint32_t ret = 0;
+
+  osalDbgCheck(len > 0);
+
+  for (size_t b=start; b<len+start; b++) {
+    if (force_bad_erase || (! nandIsBad(nandp, b))) {
+      const uint8_t status = nandErase(nandp, b);
+      if (nandFailed(status)) {
+        nandMarkBad(nandp, b);
+        ret++;
+      }
+    }
+  }
+
+  return ret;
+}
+
 /*
  ******************************************************************************
  * EXPORTED FUNCTIONS
  ******************************************************************************
  */
+/**
+ * @brief __nandEraseRangeForceDebugOnly
+ * @param nandp
+ * @param start
+ * @param len
+ */
+uint32_t __nandEraseRangeForce_DebugOnly(NANDDriver *nandp, uint32_t start, uint32_t len) {
+
+  return nand_erase_range(nandp, start, len, true);
+}
 
 /**
  * @brief   Erase range of blocks.
@@ -73,21 +111,7 @@ static void fill_pagebuf_rand(void *buf, size_t pagedatasize, size_t sparesize) 
  */
 uint32_t nandEraseRange(NANDDriver *nandp, uint32_t start, uint32_t len) {
 
-  uint32_t ret = 0;
-
-  osalDbgCheck(len > 0);
-
-  for (size_t b=start; b<len+start; b++) {
-    if (! nandIsBad(nandp, b)) {
-      const uint8_t status = nandErase(nandp, b);
-      if (status & NAND_STATUS_FAILED) {
-        nandMarkBad(nandp, b);
-        ret++;
-      }
-    }
-  }
-
-  return ret;
+  return nand_erase_range(nandp, start, len, false);
 }
 
 /**
@@ -129,7 +153,38 @@ uint32_t nandFillRandomRange(NANDDriver *nandp, uint32_t start,
   return ret;
 }
 
+/**
+ * @brief Move specified number of pages starting from first between blocks.
+ * @pre   Target block must be preerased
+ * @param nandp
+ * @param src_blk
+ * @param trgt_blk
+ * @param pages
+ * @return
+ */
+uint8_t nandDataMove(NANDDriver *nandp, uint32_t src_blk,
+                     uint32_t trgt_blk, uint32_t pages, uint8_t *working_area) {
 
+  uint32_t len = nandp->config->page_data_size + nandp->config->page_spare_size;
+  uint8_t status;
 
+  for (uint32_t p=0; p<pages; p++) {
+    nandReadPageWhole(nandp, src_blk, p, working_area, len);
+    status = nandWritePageWhole(nandp, trgt_blk, p, working_area, len);
+    if (nandFailed(status)) {
+      return status;
+    }
+  }
+  return NAND_STATUS_SUCCESS;
+}
+
+/**
+ * @brief nandFailed
+ * @param status
+ * @return
+ */
+bool nandFailed(uint8_t status) {
+  return NAND_STATUS_FAILED == (status & NAND_STATUS_FAILED);
+}
 
 
