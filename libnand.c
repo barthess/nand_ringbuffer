@@ -12,6 +12,12 @@
  ******************************************************************************
  */
 
+#define DEBUG_FAKE_ERROR      TRUE
+
+#if DEBUG_FAKE_ERROR
+#define ERROR_CHANCE          32U
+#endif
+
 /*
  ******************************************************************************
  * EXTERNS
@@ -30,6 +36,10 @@
  ******************************************************************************
  */
 
+#if DEBUG_FAKE_ERROR
+static uint32_t error_chance = 0;
+#endif
+
 /*
  ******************************************************************************
  ******************************************************************************
@@ -37,6 +47,17 @@
  ******************************************************************************
  ******************************************************************************
  */
+
+#if DEBUG_FAKE_ERROR
+/**
+ * @brief fake_error
+ * @return
+ */
+static bool fake_error(void) {
+  uint32_t rnd = rand();
+  return (error_chance > 0) && (0 == rnd % error_chance);
+}
+#endif
 
 /**
  *
@@ -71,8 +92,6 @@ static uint32_t nand_erase_range(NANDDriver *nandp, uint32_t start,
 
   uint32_t ret = 0;
 
-  osalDbgCheck(len > 0);
-
   for (size_t b=start; b<len+start; b++) {
     if (force_bad_erase || (! nandIsBad(nandp, b))) {
       const uint8_t status = nandErase(nandp, b);
@@ -99,6 +118,9 @@ static uint32_t nand_erase_range(NANDDriver *nandp, uint32_t start,
  */
 uint32_t __nandEraseRangeForce_DebugOnly(NANDDriver *nandp, uint32_t start, uint32_t len) {
 
+  osalDbgCheck(len > 0);
+  osalDbgCheck(NULL != nandp);
+
   return nand_erase_range(nandp, start, len, true);
 }
 
@@ -110,6 +132,9 @@ uint32_t __nandEraseRangeForce_DebugOnly(NANDDriver *nandp, uint32_t start, uint
  * @return  number of newly detected bad blocks
  */
 uint32_t nandEraseRange(NANDDriver *nandp, uint32_t start, uint32_t len) {
+
+  osalDbgCheck(len > 0);
+  osalDbgCheck(NULL != nandp);
 
   return nand_erase_range(nandp, start, len, false);
 }
@@ -166,7 +191,7 @@ uint32_t nandFillRandomRange(NANDDriver *nandp, uint32_t start,
 uint8_t nandDataMove(NANDDriver *nandp, uint32_t src_blk,
                      uint32_t trgt_blk, uint32_t pages, uint8_t *working_area) {
 
-  uint32_t len = nandp->config->page_data_size + nandp->config->page_spare_size;
+  const uint32_t len = nandp->config->page_data_size + nandp->config->page_spare_size;
   uint8_t status;
 
   for (uint32_t p=0; p<pages; p++) {
@@ -180,12 +205,27 @@ uint8_t nandDataMove(NANDDriver *nandp, uint32_t src_blk,
 }
 
 /**
+ * @brief __nandSetErrorChance_DebugOnly
+ * @param chance
+ * @return
+ */
+void __nandSetErrorChance_DebugOnly(uint32_t chance) {
+#if DEBUG_FAKE_ERROR
+  error_chance = chance;
+#else
+  (void)chance;
+#endif
+}
+
+/**
  * @brief nandFailed
  * @param status
  * @return
  */
 bool nandFailed(uint8_t status) {
+#if DEBUG_FAKE_ERROR
+  return fake_error() || NAND_STATUS_FAILED == (status & NAND_STATUS_FAILED);
+#else
   return NAND_STATUS_FAILED == (status & NAND_STATUS_FAILED);
+#endif
 }
-
-

@@ -4,7 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-  void nandRingTest(NANDDriver *nandp);
+  void nandRingTest(NANDDriver *nandp, const NANDConfig *config, bitmap_t *bb_map);
 #ifdef __cplusplus
 }
 #endif

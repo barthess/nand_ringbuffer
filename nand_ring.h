@@ -68,6 +68,7 @@ typedef enum {
   NAND_RING_UNINIT,
   NAND_RING_IDLE,
   NAND_RING_MOUNTED,
+  NAND_RING_NO_SPACE, /* no good blocks left in ring */
   NAND_RING_STOP
 } nand_ring_state_t;
 
@@ -84,6 +85,17 @@ typedef struct {
  *
  */
 typedef struct {
+  uint32_t    data_rescue;
+  uint32_t    new_badblocks;
+  uint32_t    write_data_failed;
+  uint32_t    write_spare_failed;
+  uint32_t    erase_failed;
+} nand_ring_debug_t;
+
+/**
+ *
+ */
+typedef struct {
   const NandRingConfig  *config;
   uint32_t              cur_blk;
   uint32_t              cur_page;
@@ -94,8 +106,8 @@ typedef struct {
    */
   uint8_t               *wa;
   nand_ring_state_t     state;
+  nand_ring_debug_t     dbg;
 } NandRing;
-
 
 #ifdef __cplusplus
 extern "C" {
@@ -106,7 +118,7 @@ extern "C" {
   uint32_t nandRingWASize(const NANDDriver *nandp);
   uint32_t nandRingTotalGood(const NandRing *ring);
   void nandRingUmount(NandRing *ring);
-  void nandRingWritePage(NandRing *ring, const uint8_t *data);
+  bool nandRingWritePage(NandRing *ring, const uint8_t *data);
   void nandRingStop(NandRing *ring);
   void nandRingSetUtcCorrection(uint32_t correction);
   size_t nandRingSearchSessions(RingSession *result, size_t max_sessions);

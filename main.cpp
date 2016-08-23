@@ -200,12 +200,11 @@ int main(void) {
   chTMStartMeasurementX(&tmu_driver_start);
   nandStart(&NAND, &nandcfg, &badblock_map);
   chTMStopMeasurementX(&tmu_driver_start);
+  nandStop(&NAND);
 
   nand_wp_release();
-  nandRingTest(&NAND);
+  nandRingTest(&NAND, &nandcfg, &badblock_map);
   nand_wp_assert();
-
-  nandStop(&NAND);
 
   /*
    * Normal main() thread activity, in this demo it does nothing.

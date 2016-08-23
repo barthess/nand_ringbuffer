@@ -14,8 +14,8 @@
  ******************************************************************************
  */
 
-#define NAND_TEST_START_BLOCK     (2048)
-#define NAND_TEST_LEN             128
+#define NAND_TEST_START_BLOCK     (2048+256)
+#define NAND_TEST_LEN             64
 
 /*
  ******************************************************************************
@@ -95,7 +95,11 @@ void mount_erased(NandRing *ring) {
   const size_t len   = ring->config->len;
   NANDDriver *nandp  = ring->config->nandp;
 
-  //__nandEraseRangeForce_DebugOnly(nandp, ring->config->start_blk, ring->config->len);
+  __nandEraseRangeForce_DebugOnly(nandp, ring->config->start_blk, ring->config->len);
+  const NANDConfig *cfg = nandp->config;
+  bitmap_t *bb_map = nandp->bb_map;
+  nandStop(nandp);
+  nandStart(nandp, cfg, bb_map);
   osalDbgCheck(is_sequence_good(nandp, start, len));
 
   nandEraseRange(nandp, start, len);
@@ -378,6 +382,87 @@ void mount_erased_with_bad(NandRing *ring) {
   chHeapFree(pagebuf);
 }
 
+/**
+ *
+ */
+void mount_fail_test(NandRing *ring) {
+  NANDDriver *nandp = ring->config->nandp;
+  uint32_t blk = ring->config->start_blk;
+  uint32_t len = ring->config->len;
+
+  /* All blocks must be good before test. Some of them will
+     be marked bad during test, and must be erased at the end of test. */
+  osalDbgCheck(is_sequence_good(nandp, blk, len));
+
+  /*
+   * mount must failed when more than half of blocks are bad
+   */
+  for (size_t b=0; b<len/2+3; b++) {
+    nandMarkBad(nandp, blk+b);
+  }
+  osalDbgCheck(OSAL_FAILED == nandRingMount(ring));
+  osalDbgCheck(NAND_RING_IDLE == ring->state);
+  __nandEraseRangeForce_DebugOnly(nandp, blk, len);
+}
+
+/**
+ *
+ */
+void error_handling(NandRing *ring) {
+
+  NANDDriver *nandp = ring->config->nandp;
+  const size_t pds = nandp->config->page_data_size;
+  uint8_t *pagebuf = chHeapAlloc(NULL, pds);
+  uint64_t id = 1;
+  uint32_t blk = ring->config->start_blk;
+  uint32_t len = ring->config->len;
+
+  /* All blocks must be good before test. Some of them will
+     be marked bad during test, and must be erased at the end of test. */
+  osalDbgCheck(is_sequence_good(nandp, blk, len));
+
+  /*
+   * switch error injection ON and write some full rings of data
+   */
+  osalDbgCheck(OSAL_SUCCESS == nandRingMount(ring));
+  osalDbgCheck(NAND_RING_MOUNTED == ring->state);
+  osalDbgCheck(ring->cur_blk  == blk);
+  osalDbgCheck(ring->cur_page == 0);
+  osalDbgCheck(ring->cur_id   == id);
+  __nandSetErrorChance_DebugOnly(4096);
+  for (size_t b=0; b<7*len; b++) {
+    for (size_t i=0; i<nandp->config->pages_per_block; i++) {
+      bool status = nandRingWritePage(ring, pagebuf);
+      osalDbgCheck(OSAL_SUCCESS == status);
+      id++;
+    }
+  }
+  nandRingUmount(ring);
+  __nandSetErrorChance_DebugOnly(0);
+  osalDbgCheck(OSAL_SUCCESS == nandRingMount(ring));
+
+  /*
+   * increse error rate and write data until no space left on ring
+   */
+  osalDbgCheck(NAND_RING_MOUNTED == ring->state);
+  osalDbgCheck(ring->cur_page == 0);
+  osalDbgCheck(ring->cur_id   == id);
+  __nandSetErrorChance_DebugOnly(512);
+  bool status = OSAL_SUCCESS;
+  while (OSAL_SUCCESS == status) {
+    status = nandRingWritePage(ring, pagebuf);
+    id++;
+  }
+  nandRingUmount(ring);
+  osalDbgCheck(OSAL_FAILED == nandRingMount(ring));
+
+  /*
+   * make clean
+   */
+  __nandEraseRangeForce_DebugOnly(nandp, ring->config->start_blk, ring->config->len);
+  chHeapFree(pagebuf);
+}
+
 /*
  ******************************************************************************
  * EXPORTED FUNCTIONS
@@ -387,8 +472,9 @@ void mount_erased_with_bad(NandRing *ring) {
 /**
  *
  */
-void nandRingTest(NANDDriver *nandp) {
+void nandRingTest(NANDDriver *nandp, const NANDConfig *config, bitmap_t *bb_map) {
 
+  nandStart(nandp, config, bb_map);
   nandRingObjectInit(&nandring);
   fill_bad_table(nandp);
 
@@ -396,14 +482,23 @@ void nandRingTest(NANDDriver *nandp) {
   uint8_t *ring_working_area = chHeapAlloc(NULL, nandRingWASize(nandp));
   nandRingStart(&nandring, &nandringcfg, ring_working_area);
 
+  srand(chSysGetRealtimeCounterX());
+
   mount_erased(&nandring);
   mount_trashed(&nandring);
   write_page_test(&nandring);
   mount_erased_with_bad(&nandring);
 
+  nandStop(nandp);
+  nandStart(nandp, config, bb_map);
+  mount_fail_test(&nandring);
+
+  srand(chSysGetRealtimeCounterX());
+  nandStop(nandp);
+  nandStart(nandp, config, bb_map);
+  error_handling(&nandring);
+
   nandRingStop(&nandring);
   chHeapFree(ring_working_area);
 }
-
-
 
