@@ -393,11 +393,16 @@ void nandRingTest(NANDDriver *nandp) {
   fill_bad_table(nandp);
 
   nandringcfg.nandp = nandp;
-  nandRingStart(&nandring, &nandringcfg);
+  uint8_t *ring_working_area = chHeapAlloc(NULL, nandRingWASize(nandp));
+  nandRingStart(&nandring, &nandringcfg, ring_working_area);
+
   mount_erased(&nandring);
   mount_trashed(&nandring);
   write_page_test(&nandring);
   mount_erased_with_bad(&nandring);
+
+  nandRingStop(&nandring);
+  chHeapFree(ring_working_area);
 }
 
 

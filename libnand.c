@@ -160,6 +160,7 @@ uint32_t nandFillRandomRange(NANDDriver *nandp, uint32_t start,
  * @param src_blk
  * @param trgt_blk
  * @param pages
+ * @param working_area must be big enough to store page data + page spare
  * @return
  */
 uint8_t nandDataMove(NANDDriver *nandp, uint32_t src_blk,

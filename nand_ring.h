@@ -9,36 +9,44 @@ typedef struct __attribute__((packed)) {
    * @brief     NAND specific area for bad mark storing.
    * @details   Must be always set to 0xFFFF i.e. erased.
    */
-  uint16_t  bad_mark;
+  uint16_t    bad_mark;
   /**
    * @brief     Page id. Monotonically increasing numbers.
    * @details   Zero value reserved.
    */
-  uint64_t  id;
+  uint64_t    id;
   /**
    * @brief     Microseconds since system boot
    */
-  uint64_t  time_boot_uS;
+  uint64_t    time_boot_us;
   /**
-   * @brief     Correction for system boot time stamp
+   * @brief     Correction for system boot time stamp.
    * @details   Used when no date/time was available during boot and was
    *            acquired later, for example from GPS.
+   * @note      Currently unused.
    */
-  uint32_t  utc_correction;
+  uint32_t    utc_correction;
   /**
    * @brief     Page ECC data.
    */
-  uint32_t  page_ecc;
+  uint32_t    page_ecc;
   /**
    * @brief     Session number.
    * @details   Increments on every file system mount. Used for quicker
    *            session search.
+   * @note      Currently unused.
    */
-  //uint8_t   session;
+  uint16_t    session;
+  /**
+   * @brief     Number of actually written bytes in page.
+   * @details   Used during flush procedure and during "file" size estimation.
+   * @note      Currently unused.
+   */
+  uint16_t    written;
   /**
    * @brief     Seal CRC for this structure
    */
-  uint32_t   spare_crc;
+  uint32_t    spare_crc;
 } NandPageHeader;
 
 /**
@@ -80,22 +88,22 @@ typedef struct {
   uint32_t              cur_blk;
   uint32_t              cur_page;
   uint64_t              cur_id;
-  //uint8_t               cur_session;
-  uint32_t              utc_correction;
-  nand_ring_state_t     state;
   /**
-   * @brief   Debug field for NAND fails emulation.
-   * @details Denotes number of subsequent write failures.
+   * @brief   working area buffer
+   * @details must be big enough to store page data + page spare
    */
-  uint32_t              _dbg_fake_write_faled;
+  uint8_t               *wa;
+  nand_ring_state_t     state;
 } NandRing;
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
   void nandRingObjectInit(NandRing *ring);
-  void nandRingStart(NandRing *ring, const NandRingConfig *config);
+  void nandRingStart(NandRing *ring, const NandRingConfig *config, uint8_t *working_area);
   bool nandRingMount(NandRing *ring);
+  uint32_t nandRingWASize(const NANDDriver *nandp);
   uint32_t nandRingTotalGood(const NandRing *ring);
   void nandRingUmount(NandRing *ring);
   void nandRingWritePage(NandRing *ring, const uint8_t *data);
