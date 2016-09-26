@@ -7,3 +7,4 @@
 .dep
 build
 *.creator.user
+*.autosave

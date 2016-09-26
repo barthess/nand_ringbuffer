@@ -120,6 +120,7 @@ extern "C" {
   void nandRingUmount(NandRing *ring);
   bool nandRingWritePage(NandRing *ring, const uint8_t *data);
   void nandRingStop(NandRing *ring);
+  void nandRingErase(NandRing *ring);
   void nandRingSetUtcCorrection(uint32_t correction);
   size_t nandRingSearchSessions(RingSession *result, size_t max_sessions);
 #ifdef __cplusplus

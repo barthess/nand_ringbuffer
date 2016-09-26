@@ -855,3 +855,7 @@ libnand.c
 libnand.h
 soft_crc.c
 soft_crc.h
+nand_log_test.c
+nand_log_test.h
+linetest_proto.c
+linetest_proto.h

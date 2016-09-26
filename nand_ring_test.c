@@ -75,14 +75,9 @@ void fill_bad_table(NANDDriver *nandp) {
  * @param end
  * @return
  */
-static bool is_sequence_good(NANDDriver *nandp, size_t start, size_t len) {
+static bool is_sequence_good(NandRing *ring) {
 
-  for (size_t b=0; b<len; b++) {
-    if (nandIsBad(nandp, start+b)) {
-      return false;
-    }
-  }
-  return true;
+  return ring->config->len == nandRingTotalGood(ring);
 }
 
 /**
@@ -100,7 +95,7 @@ void mount_erased(NandRing *ring) {
   bitmap_t *bb_map = nandp->bb_map;
   nandStop(nandp);
   nandStart(nandp, cfg, bb_map);
-  osalDbgCheck(is_sequence_good(nandp, start, len));
+  osalDbgCheck(is_sequence_good(ring));
 
   nandEraseRange(nandp, start, len);
   nandRingMount(ring);
@@ -120,7 +115,7 @@ void mount_trashed(NandRing *ring) {
   const size_t start = ring->config->start_blk;
   const size_t len   = ring->config->len;
   NANDDriver *nandp  = ring->config->nandp;
-  osalDbgCheck(is_sequence_good(nandp, start, len));
+  osalDbgCheck(is_sequence_good(ring));
 
   const size_t pds = nandp->config->page_data_size;
   const size_t pss = nandp->config->page_spare_size;
@@ -150,7 +145,7 @@ void write_page_test(NandRing *ring) {
   uint32_t len = ring->config->len;
 
   /* this test does not check bad block handling */
-  osalDbgCheck(is_sequence_good(nandp, blk, len));
+  osalDbgCheck(is_sequence_good(ring));
 
   /*
    * check single page write
@@ -277,7 +272,7 @@ void mount_erased_with_bad(NandRing *ring) {
 
   /* All blocks must be good before test. Some of them will
      be marked bad during test, and must be erased at the end of test. */
-  osalDbgCheck(is_sequence_good(nandp, blk, len));
+  osalDbgCheck(is_sequence_good(ring));
 
   /*
    * first block is bad
@@ -392,7 +387,7 @@ void mount_fail_test(NandRing *ring) {
 
   /* All blocks must be good before test. Some of them will
      be marked bad during test, and must be erased at the end of test. */
-  osalDbgCheck(is_sequence_good(nandp, blk, len));
+  osalDbgCheck(is_sequence_good(ring));
 
   /*
    * mount must failed when more than half of blocks are bad
@@ -419,7 +414,7 @@ void error_handling(NandRing *ring) {
 
   /* All blocks must be good before test. Some of them will
      be marked bad during test, and must be erased at the end of test. */
-  osalDbgCheck(is_sequence_good(nandp, blk, len));
+  osalDbgCheck(is_sequence_good(ring));
 
   /*
    * switch error injection ON and write some full rings of data

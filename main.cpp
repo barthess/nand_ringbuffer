@@ -48,8 +48,8 @@
 #include "hal.h"
 
 #include "bitmap.h"
-#include "nand_log.h"
 #include "nand_ring_test.h"
+#include "nand_log_test.h"
 
 /*
  ******************************************************************************
@@ -204,6 +204,7 @@ int main(void) {
 
   nand_wp_release();
   nandRingTest(&NAND, &nandcfg, &badblock_map);
+  nandLogTest(&NAND, &nandcfg, &badblock_map);
   nand_wp_assert();
 
   /*

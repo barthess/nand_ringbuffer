@@ -10,8 +10,8 @@
  * DEFINES
  ******************************************************************************
  */
-#define FETCH_TIMEOUT     (MS2ST(200))
-//#define NAND_PAGE_SIZE    2048 // TODO: delete hardcode
+
+#define FETCH_TIMEOUT     (MS2ST(100))
 
 /*
  ******************************************************************************
@@ -31,12 +31,6 @@
  ******************************************************************************
  */
 
-//static msg_t nand_mailbox_buffer[NAND_BUFFER_COUNT];
-//MAILBOX_DECL(nand_mailbox, nand_mailbox_buffer, NAND_BUFFER_COUNT);
-
-//MEMORYPOOL_DECL(nand_mempool, NAND_PAGE_SIZE, NULL) ;
-//static uint8_t nand_mempool_buffer[NAND_PAGE_SIZE * NAND_BUFFER_COUNT];
-
 /*
  ******************************************************************************
  ******************************************************************************
@@ -48,6 +42,8 @@
 /**
  * @brief post_full_buffer
  * @param log
+ * @note  There is no checks of mailbox post status because it has the
+ *        same size as memory pool.
  */
 static void post_full_buffer(NandLog *log) {
 
@@ -80,7 +76,10 @@ static THD_FUNCTION(NandWorker, arg) {
 
   while (! chThdShouldTerminateX()) {
     if (MSG_OK == chMBFetch(&self->mb, (msg_t *)(&data), FETCH_TIMEOUT)) {
-      nandRingWritePage(self->ring, data);
+      bool status = nandRingWritePage(self->ring, data);
+      if (OSAL_SUCCESS != status) {
+        self->state = NAND_LOG_NO_SPACE;
+      }
       chPoolFree(&self->mempool, data);
     }
   }
@@ -154,16 +153,16 @@ void nandLogStart(NandLog *log, NandRing *ring) {
  * @param log
  * @param data
  * @param len
- * @note      There is no checks of mailbox post status because it has the
- *            same size as memory pool.
  * @return    Size of actually written data.
  */
 size_t nandLogWrite(NandLog *log, const uint8_t *data, size_t len) {
 
   osalDbgCheck((NULL != log) && (NULL != data) && (0 != len));
+  if (NAND_LOG_NO_SPACE == log->state)
+    return 0;
   osalDbgCheck(NAND_LOG_READY == log->state);
   size_t written = 0;
-  const size_t pagesize = log->ring->config->nandp->config->page_data_size;
+  const size_t pds = log->ring->config->nandp->config->page_data_size;
 
   /* first look for available buffers and try to allocate new one
      if all of them was exhausted during previouse operation */
@@ -183,7 +182,7 @@ size_t nandLogWrite(NandLog *log, const uint8_t *data, size_t len) {
     log->btip += len;
     post_full_buffer(log);
 
-    log->bfree = pagesize;
+    log->bfree = pds;
     log->btip  = chPoolAlloc(&log->mempool);
     if (NULL == log->btip) {
       /* memory pool exhausted */
@@ -206,7 +205,7 @@ size_t nandLogWrite(NandLog *log, const uint8_t *data, size_t len) {
  */
 void nandLogStop(NandLog *log) {
 
-  if (NAND_LOG_READY == log->state) {
+  if ((NAND_LOG_READY == log->state) || (NAND_LOG_NO_SPACE == log->state)) {
     log->state = NAND_LOG_STOP;
 
     zero_tail(log);
@@ -219,3 +218,10 @@ void nandLogStop(NandLog *log) {
   }
 }
 
+/**
+ * @brief nandLogErase
+ * @param log
+ */
+void nandLogErase(NandLog *log) {
+
+}

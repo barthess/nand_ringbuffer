@@ -8,6 +8,7 @@
 typedef enum {
   NAND_LOG_UNINIT,
   NAND_LOG_READY,
+  NAND_LOG_NO_SPACE,
   NAND_LOG_STOP
 } nand_log_state_t;
 
@@ -35,6 +36,7 @@ extern "C" {
   void nandLogObjectInit(NandLog *log);
   void nandLogStart(NandLog *log, NandRing *ring);
   size_t nandLogWrite(NandLog *log, const uint8_t *data, size_t len);
+  void nandLogErase(NandLog *log);
   void nandLogStop(NandLog *log);
 #ifdef __cplusplus
 }

@@ -537,7 +537,8 @@ NO_SPACE:
 uint32_t nandRingTotalGood(const NandRing *ring) {
 
   osalDbgCheck(NULL != ring);
-  osalDbgCheck(NAND_RING_MOUNTED == ring->state);
+  osalDbgCheck((NAND_RING_MOUNTED == ring->state)
+               || (NAND_RING_IDLE == ring->state));
 
   return get_total_good(ring);
 }
@@ -574,6 +575,21 @@ size_t nandRingSearchSessions(RingSession *result, size_t max_sessions) {
   (void)max_sessions;
   osalSysHalt("Unrealized yet");
   return 0;
+}
+
+/**
+ * @brief nandRingErase
+ * @param ring
+ */
+void nandRingErase(NandRing *ring) {
+
+  osalDbgCheck();
+
+  const size_t start = ring->config->start_blk;
+  const size_t len   = ring->config->len;
+  NANDDriver *nandp  = ring->config->nandp;
+
+  nandEraseRange(nandp, start, len);
 }
 
 /**

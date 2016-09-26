@@ -116,6 +116,8 @@ CSRC = $(STARTUPSRC) \
        nand_ring.c \
        nand_ring_test.c \
        nand_log.c \
+       nand_log_test.c \
+       linetest_proto.c \
        libnand.c \
        soft_crc.c \
        timeboot_u64.c
