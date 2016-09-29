@@ -9,6 +9,11 @@
 #include "libnand.h"
 
 /*
+ * Код строго однопоточный. Ориентирован на изолированную работу в
+ * отдельном потоке.
+ */
+
+/*
  * После запуска считаем, что предыдущий раз был неудачен по причине
  * отключения электричества, поэтому конец лога записываем заново:
  * 1) ощищаем следующий блок
@@ -22,7 +27,7 @@
  *
  * Форматирование - это простая очистка всех блоков
  *
- * Если при записи память обнаружила ошибку - перемещаем записанные данные
+ * Если при записи NAND обнаружила ошибку - перемещаем записанные данные
  * в новый блок, текущий помечаем, как сбойный
  *
  * Если ошибка обнаружилась при чтении - пытаемся скорректировать данные. Блок
@@ -48,13 +53,34 @@
  */
 
 /*
+ * Обновление от 27.09.2016
+ *
+ * Поиск сессий:
+ * Сессии организуются в связный список. Указателем на предыдущю сессию является
+ * номер последнего записанного блока этой сессии. Этот номер хранится в
+ * заголовке _каждой_ записи. При поиске алгоритм проходит сессии от новейшей
+ * к предыдущим. Нулевая сессия содержит указатель на последний блок кольца.
+ *
+ * При работе возможны следующие варианты:
+ * 1) В лог еще ничего ни разу не писали. Определяется по PAGE_ID_FIRST.
+ * 2) Нулевая сессия должна ссылаться на последний блок кольца. Попытка
+ *    перехода приведет к ошибке CRC, если сессия не занимает всё кольцо,
+ *    иначе см. п.3.
+ * 3) Убер-сессия на всё кольцо определяется после перевого перехода:
+ *    адресованный блок указывает сам на себя.
+ * 4) У нас много сессий, самая старая частично перезаписана последней.
+ *    Определяется по изменению id в бОльшую сторону.
+ * 5) Начало частично перезаписанной сессии - это next_good(текущий_блок_кольца).
+ */
+
+/*
  ******************************************************************************
  * DEFINES
  ******************************************************************************
  */
 
-#define PAGE_ID_WASTED            (uint64_t)0x0  /* page erased or CRC broken */
-#define PAGE_ID_FIRST             (uint64_t)0x1
+#define PAGE_ID_WASTED            0  /* page erased or CRC broken */
+#define PAGE_ID_FIRST             1
 
 #define BLOCK_NOT_FOUND           0xFFFFFFFF
 #define LAST_PAGE_NOT_FOUND       0xFFFFFFFF
@@ -180,25 +206,18 @@ static bool header_crc_valid(const NandPageHeader *header) {
 }
 
 /**
- * @brief read_id
+ * @brief Read page header and validate CRC.
  * @param ring
  * @param blk
  * @param page
  * @return
  */
-static uint64_t read_page_id(const NandRing *ring, uint32_t blk, uint32_t page) {
+static bool page_header(const NandRing *ring, uint32_t blk, uint32_t page,
+                        NandPageHeader *header) {
 
   NANDDriver *nandp = ring->config->nandp;
-  NandPageHeader header;
-
-  nandReadPageSpare(nandp, blk, page, (uint8_t *)&header, sizeof(NandPageHeader));
-
-  if (! header_crc_valid(&header)) {
-    return PAGE_ID_WASTED;
-  }
-  else {
-    return header.id;
-  }
+  nandReadPageSpare(nandp, blk, page, (uint8_t *)header, sizeof(NandPageHeader));
+  return header_crc_valid(header);
 }
 
 /**
@@ -224,11 +243,17 @@ static uint32_t last_written_block(const NandRing *ring) {
   }
   uint32_t last_blk = BLOCK_NOT_FOUND;
   uint64_t last_id  = PAGE_ID_FIRST;
+  uint64_t id = PAGE_ID_WASTED;
+  NandPageHeader header;
 
   /* iterate over good blocks until block number wraps */
   uint32_t b = first;
   do {
-    const uint64_t id = read_page_id(ring, b, 0);
+    if (page_header(ring, b, 0, &header))
+      id = header.id;
+    else
+      id = PAGE_ID_WASTED;
+
     if (id >= last_id) {
       last_blk = b;
       last_id  = id;
@@ -255,9 +280,15 @@ static uint32_t last_written_page(const NandRing *ring, uint32_t last_blk) {
   uint64_t last_id = PAGE_ID_FIRST;
   uint32_t last_page = LAST_PAGE_NOT_FOUND;
   const size_t ppb = ring->config->nandp->config->pages_per_block;
+  NandPageHeader header;
+  uint64_t id = PAGE_ID_WASTED;
 
   for (size_t page=0; page<ppb; page++) {
-    const uint64_t id = read_page_id(ring, last_blk, page);
+    if (page_header(ring, last_blk, page, &header))
+      id = header.id;
+    else
+      id = PAGE_ID_WASTED;
+
     if (id >= last_id) {
       last_page = page;
       last_id   = id;
@@ -281,7 +312,7 @@ static uint32_t wa_size(const NANDDriver *nandp) {
 }
 
 /**
- * @brief Overwrites erased pages in last block.
+ * @brief Zero erased pages in the last block.
  * @param ring
  * @param last_blk
  * @param last_page
@@ -368,13 +399,33 @@ static void fill_header(const NandRing *ring, NandPageHeader *header,
   header->page_ecc       = page_ecc;
   header->bad_mark       = 0xFFFF;
   header->id             = ring->cur_id;
-  header->utc_correction = 0;
+  header->utc_correction = ring->utc_correction;
   header->time_boot_us   = timebootU64();
-  header->session        = 0;
+  header->back_link      = ring->cur_back_link;
   header->written        = actually_written;
 
   /* must be at the very end of operation */
   header->spare_crc      = calc_spare_crc(header);
+}
+
+/**
+ * @brief fill_session
+ * @param hdr_first
+ * @param hdr_last
+ * @param result
+ */
+static void fill_session(const NandRingIterator *it,
+                         const NandPageHeader *hdr_first,
+                         const NandPageHeader *hdr_last,
+                         uint32_t first_blk,
+                         NandRingSession *result) {
+
+  result->id = hdr_first->id;
+  result->time_boot_us = hdr_first->time_boot_us;
+  result->utc_correction = hdr_last->utc_correction;
+  result->first_blk = first_blk;
+  result->last_blk = it->last_block;
+  result->last_page = last_written_page(it->ring, it->last_block);
 }
 
 /**
@@ -401,9 +452,10 @@ void nandRingObjectInit(NandRing *ring) {
   ring->wa = NULL;
   ring->config = NULL;
   ring->state = NAND_RING_UNINIT;
+  ring->utc_correction = 0;
+  ring->cur_back_link = -1;
 
   reset_debug(ring);
-
   /* other fields will be initialized during start() */
 }
 
@@ -442,19 +494,25 @@ bool nandRingMount(NandRing *ring) {
     return OSAL_FAILED;
   }
 
-  uint32_t last_blk  = last_written_block(ring);
+  const uint32_t last_blk  = last_written_block(ring);
   if (BLOCK_NOT_FOUND == last_blk) {
     ring->cur_blk = mkfs(ring);
     ring->cur_page = 0;
     ring->cur_id = PAGE_ID_FIRST;
+    ring->cur_back_link = ring->config->start_blk + ring->config->len - 1;
   }
   else {
-    uint32_t last_page = last_written_page(ring, last_blk);
-    uint64_t last_id   = read_page_id(ring, last_blk, last_page);
-
-    ring->cur_blk = close_prev_session(ring, last_blk, last_page);
-    ring->cur_page = 0;
-    ring->cur_id = last_id + 1;
+    const uint32_t last_page = last_written_page(ring, last_blk);
+    NandPageHeader header;
+    if (! page_header(ring, last_blk, last_page, &header)) {
+      return OSAL_FAILED; // This page header _must_ be read correctly
+    }
+    else {
+      ring->cur_blk = close_prev_session(ring, last_blk, last_page);
+      ring->cur_page = 0;
+      ring->cur_id = header.id + 1;
+      ring->cur_back_link = last_blk;
+    }
   }
 
   ring->state = NAND_RING_MOUNTED;
@@ -559,22 +617,9 @@ uint32_t nandRingWASize(const NANDDriver *nandp) {
  * @brief nandRingSetUtcCorrection
  * @param correction
  */
-void nandRingSetUtcCorrection(uint32_t correction) {
-  (void)correction;
-  osalSysHalt("Unrealized yet");
-}
-
-/**
- * @brief nandRingSearchSessions
- * @param result
- * @param max_sessions
- * @return
- */
-size_t nandRingSearchSessions(RingSession *result, size_t max_sessions) {
-  (void)result;
-  (void)max_sessions;
-  osalSysHalt("Unrealized yet");
-  return 0;
+void nandRingSetUtcCorrection(NandRing *ring, uint32_t correction) {
+  osalDbgCheck(NAND_RING_UNINIT != ring->state);
+  ring->utc_correction = correction;
 }
 
 /**
@@ -583,7 +628,7 @@ size_t nandRingSearchSessions(RingSession *result, size_t max_sessions) {
  */
 void nandRingErase(NandRing *ring) {
 
-  osalDbgCheck();
+  osalDbgCheck(NAND_RING_IDLE == ring->state);
 
   const size_t start = ring->config->start_blk;
   const size_t len   = ring->config->len;
@@ -616,3 +661,112 @@ void nandRingStop(NandRing *ring) {
   ring->config = NULL;
   ring->wa = NULL;
 }
+
+/**
+ * @brief NandRingIteratorBind
+ * @param it
+ * @param ring
+ */
+void NandRingIteratorBind(NandRingIterator *it, NandRing *ring) {
+
+  osalDbgCheck((NULL != it) && (NULL != ring));
+  osalDbgCheck(NAND_RING_MOUNTED == ring->state);
+
+  it->finished   = false;
+  it->back_link  = -1;
+  it->last_block = -1;
+  it->ring       = NULL;
+
+  /* ring is empty */
+  if (ring->cur_id == PAGE_ID_FIRST) {
+    it->finished = true;
+    return;
+  }
+
+  /* some data has been written */
+  NandPageHeader hdr;
+  const uint32_t blk = last_written_block(ring);
+  it->last_block = blk;
+  if (! page_header(ring, ring->cur_back_link, 0, &hdr)) {
+    /* CRC error. We have single session smaller than ring */
+    it->back_link = get_last_blk(ring);
+  }
+  else {
+    /* single session wrapped over the ring 1 or more times */
+    if (hdr.back_link == ring->cur_back_link) {
+      it->back_link = next_good(ring, ring->cur_blk);
+    }
+    /* more than 1 sessions */
+    else {
+      it->back_link = hdr.back_link;
+    }
+  }
+
+  /**/
+  ring->state = NAND_RING_ITERATOR_BOUNDED;
+  it->ring = ring;
+}
+
+/**
+ * @brief NandRingIteratorNext
+ * @param it
+ * @param session
+ */
+bool NandRingIteratorNext(NandRingIterator *it, NandRingSession *session) {
+
+  osalDbgCheck((NULL != session) && (NULL != it) && (NULL != it->ring));
+  osalDbgCheck(NAND_RING_ITERATOR_BOUNDED == it->ring->state);
+  osalDbgCheck(! it->finished);
+
+  NandPageHeader hdr_first, hdr_last;
+  uint32_t first_blk = next_good(it->ring, it->back_link);
+  uint32_t last_page = last_written_page(it->ring, it->last_block);
+  bool status_first = page_header(it->ring, first_blk, 0, &hdr_first);
+  bool status_last  = page_header(it->ring, it->last_block, last_page, &hdr_last);
+
+  if (status_first && status_last) {
+    if (hdr_first.id > hdr_last.id) {
+      /* Found partly overwritten last session. Recover its first block. */
+      first_blk = next_good(it->ring, it->ring->cur_blk);
+      status_first = page_header(it->ring, first_blk, 0, &hdr_first);
+      it->finished = true;
+      if (! status_first) {
+        return OSAL_FAILED;
+      }
+    }
+
+    fill_session(it, &hdr_first, &hdr_last, first_blk, session);
+    it->last_block = it->back_link;
+    it->back_link = hdr_first.back_link;
+    return OSAL_SUCCESS;
+  }
+  else {
+    it->finished = true;
+    return OSAL_FAILED;
+  }
+}
+
+/**
+ *
+ */
+void NandRingIteratorRelease(NandRingIterator *it) {
+  osalDbgCheck(NULL != it);
+
+  if (NULL == it->ring)
+    return;
+
+  osalDbgCheck(NAND_RING_ITERATOR_BOUNDED == it->ring->state);
+  it->ring->state = NAND_RING_MOUNTED;
+  it->ring = NULL;
+}
+
+/**
+ * @brief NandRingIteratorFinished
+ * @param it
+ * @return
+ */
+bool NandRingIteratorFinished(NandRingIterator *it) {
+  osalDbgCheck((NULL != it) && (NULL != it->ring));
+  return it->finished;
+}
+

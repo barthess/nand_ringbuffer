@@ -91,9 +91,8 @@ void nandLogTest(NANDDriver *nandp, const NANDConfig *config, bitmap_t *bb_map) 
   nandStart(nandp, config, bb_map);
   nandringcfg.nandp = nandp;
   uint8_t *ring_working_area = chHeapAlloc(NULL, nandRingWASize(nandp));
-  nandRingStart(&nandring, &nandringcfg, ring_working_area);
-  osalDbgCheck(OSAL_SUCCESS == nandRingMount(&nandring));
-  nandLogStart(&nandlog, &nandring);
+
+  nandLogStart(&nandlog, &nandring, &nandringcfg, ring_working_area);
 
 
 

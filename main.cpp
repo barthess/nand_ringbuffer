@@ -204,7 +204,7 @@ int main(void) {
 
   nand_wp_release();
   nandRingTest(&NAND, &nandcfg, &badblock_map);
-  nandLogTest(&NAND, &nandcfg, &badblock_map);
+  //nandLogTest(&NAND, &nandcfg, &badblock_map);
   nand_wp_assert();
 
   /*

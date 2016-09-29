@@ -125,9 +125,15 @@ void nandLogObjectInit(NandLog *log) {
  * @param log
  * @param ring
  */
-void nandLogStart(NandLog *log, NandRing *ring) {
+void nandLogStart(NandLog *log, NandRing *ring,
+               const NandRingConfig *nandringcfg, uint8_t *ring_working_area) {
 
-  osalDbgCheck((NULL != log) && (NULL != ring));
+  osalDbgCheck((NULL != log) && (NULL != ring) && (NULL != nandringcfg)
+               && (NULL != ring_working_area));
+
+  nandRingStart(ring, nandringcfg, ring_working_area);
+  osalDbgCheck(OSAL_SUCCESS == nandRingMount(ring));
+
   osalDbgCheck(NAND_RING_MOUNTED == ring->state);
   const size_t pagesize = ring->config->nandp->config->page_data_size;
 
@@ -214,6 +220,8 @@ void nandLogStop(NandLog *log) {
     chThdTerminate(log->worker);
     chThdWait(log->worker);
     log->worker = NULL;
+
+    nandRingStop(log->ring);
     log->ring = NULL;
   }
 }
@@ -223,5 +231,6 @@ void nandLogStop(NandLog *log) {
  * @param log
  */
 void nandLogErase(NandLog *log) {
-
+  osalDbgCheck(NAND_LOG_STOP == log->state);
+  nandRingErase(log->ring);
 }

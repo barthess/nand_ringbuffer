@@ -34,7 +34,9 @@ typedef struct {
 extern "C" {
 #endif
   void nandLogObjectInit(NandLog *log);
-  void nandLogStart(NandLog *log, NandRing *ring);
+  void nandLogStart(NandLog *log, NandRing *ring,
+                    const NandRingConfig *nandringcfg,
+                    uint8_t *ring_working_area);
   size_t nandLogWrite(NandLog *log, const uint8_t *data, size_t len);
   void nandLogErase(NandLog *log);
   void nandLogStop(NandLog *log);
