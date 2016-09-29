@@ -109,23 +109,35 @@ typedef struct {
   uint8_t               *wa;
 } NandRing;
 
+typedef enum {
+  NAND_ITERATOR_NO_SESSION,
+  NAND_ITERATOR_SINGLE_SESSION,
+  NAND_ITERATOR_LOOPED_SESSION,
+  NAND_ITERATOR_MULTI_SESSION
+} nand_iterator_session_t;
+
 /**
  *
  */
 typedef struct {
   NandRing *ring;
   /**
-   * @brief number of ther last block of ther previous session
+   * @brief last written block of the current session
    */
-  uint32_t back_link;
+  uint32_t last_blk;
   /**
-   * @brief last block of the current session
+   * @brief Notch for search termination. Contains backlink from last session.
+   *        Filled during iterator binding.
    */
-  uint32_t last_block;
+  uint32_t notch;
   /**
    * @brief end if iteration flag
    */
-  bool     finished;
+  bool finished;
+  /**
+   * @brief session layout
+   */
+  nand_iterator_session_t state;
 } NandRingIterator;
 
 

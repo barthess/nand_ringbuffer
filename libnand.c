@@ -116,7 +116,7 @@ static uint32_t nand_erase_range(NANDDriver *nandp, uint32_t start,
  * @param start
  * @param len
  */
-uint32_t __nandEraseRangeForce_DebugOnly(NANDDriver *nandp, uint32_t start, uint32_t len) {
+uint32_t __nandEraseRangeForce(NANDDriver *nandp, uint32_t start, uint32_t len) {
 
   osalDbgCheck(len > 0);
   osalDbgCheck(NULL != nandp);
@@ -209,7 +209,7 @@ uint8_t nandDataMove(NANDDriver *nandp, uint32_t src_blk,
  * @param chance
  * @return
  */
-void __nandSetErrorChance_DebugOnly(uint32_t chance) {
+void __nandSetErrorChance(uint32_t chance) {
 #if DEBUG_FAKE_ERROR
   error_chance = chance;
 #else

@@ -7,8 +7,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-  uint32_t __nandEraseRangeForce_DebugOnly(NANDDriver *nandp, uint32_t start, uint32_t len);
-  void __nandSetErrorChance_DebugOnly(uint32_t chance);
+  uint32_t __nandEraseRangeForce(NANDDriver *nandp, uint32_t start, uint32_t len);
+  void __nandSetErrorChance(uint32_t chance);
   uint32_t nandEraseRange(NANDDriver *nandp, uint32_t start, uint32_t len);
   uint32_t nandFillRandomRange(NANDDriver *nandp, uint32_t start,
                                uint32_t len, void *pagebuf);

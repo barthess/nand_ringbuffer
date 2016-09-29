@@ -203,7 +203,8 @@ int main(void) {
   nandStop(&NAND);
 
   nand_wp_release();
-  nandRingTest(&NAND, &nandcfg, &badblock_map);
+  nandRingIteratorTest(&NAND, &nandcfg, &badblock_map);
+  //nandRingTest(&NAND, &nandcfg, &badblock_map);
   //nandLogTest(&NAND, &nandcfg, &badblock_map);
   nand_wp_assert();
 
