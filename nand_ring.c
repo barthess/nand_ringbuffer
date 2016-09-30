@@ -714,7 +714,9 @@ bool NandRingIteratorNext(NandRingIterator *it, NandRingSession *session) {
   }
 
   NandPageHeader hdr_first, hdr_last;
-  uint32_t last_blk, first_blk, last_page;
+  uint32_t last_blk  = -1;
+  uint32_t first_blk = -1;
+  uint32_t last_page = -1;
 
   last_blk = it->last_blk;
   last_page = last_written_page(ring, last_blk);
@@ -724,6 +726,7 @@ bool NandRingIteratorNext(NandRingIterator *it, NandRingSession *session) {
 
   switch(it->state) {
   case NAND_ITERATOR_NO_SESSION:
+    first_blk = -1;
     goto ERROR;
     break;
 
@@ -747,7 +750,7 @@ bool NandRingIteratorNext(NandRingIterator *it, NandRingSession *session) {
 
   if (! page_header(ring, first_blk, 0, &hdr_first)
       || (hdr_first.back_link != hdr_last.back_link)
-      || (hdr_first.id == hdr_last.id)) {
+      || (hdr_last.id < hdr_first.id)) {
     goto ERROR;
   }
   fill_session(it, &hdr_first, &hdr_last, first_blk, session);
