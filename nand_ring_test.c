@@ -623,7 +623,7 @@ void iterator_single_session(NandRing *ring) {
  * @brief iterator_multisession
  * @param ring
  */
-void iterator_multisession(NandRing *ring) {
+void iterator_multisession(NandRing *ring, size_t tail_len) {
   const size_t start = ring->config->start_blk;
   const size_t len   = ring->config->len;
   NANDDriver *nandp  = ring->config->nandp;
@@ -632,47 +632,248 @@ void iterator_multisession(NandRing *ring) {
   uint8_t *pagebuf = chHeapAlloc(NULL, pds);
   NandRingIterator it;
   NandRingSession session;
-  bool status;
-  size_t L1 = 10;
-  size_t L2 = 20;
+  const size_t N1 = 12;
+  const size_t N2 = 24;
 
   osalDbgCheck(is_sequence_good(ring));
   nandEraseRange(nandp, start, len);
 
   /* 2 sessions not full ring */
   nandRingMount(ring);
-  for (size_t b=0; b<L1; b++) {
+  for (size_t b=0; b<N1; b++) {
     for (size_t i=0; i<ppb; i++) {
-      status = nandRingWritePage(ring, pagebuf);
+      bool status = nandRingWritePage(ring, pagebuf);
       osalDbgCheck(OSAL_SUCCESS == status);
     }
   }
   nandRingUmount(ring);
-
   nandRingMount(ring);
-  for (size_t b=0; b<L2; b++) {
+  for (size_t b=0; b<N2; b++) {
     for (size_t i=0; i<ppb; i++) {
-      status = nandRingWritePage(ring, pagebuf);
+      bool status = nandRingWritePage(ring, pagebuf);
       osalDbgCheck(OSAL_SUCCESS == status);
     }
   }
-  nandRingUmount(ring);
 
   NandRingIteratorBind(&it, ring);
   osalDbgCheck(NAND_RING_ITERATOR_BOUNDED == it.ring->state);
 
-  osalDbgCheck(it.last_blk == NAND_TEST_START_BLOCK);
+  osalDbgCheck(it.last_blk == NAND_TEST_START_BLOCK + N1 + N2 - 1);
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(! NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 + N2 - 1);
+  osalDbgCheck(session.last_page == 63);
+
   osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
   osalDbgCheck(NandRingIteratorFinished(&it));
   osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK);
-  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK);
-  osalDbgCheck(session.last_page == 0);
-
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 - 1);
+  osalDbgCheck(session.last_page == 63);
 
   osalDbgCheck(OSAL_FAILED == NandRingIteratorNext(&it, &session));
   NandRingIteratorRelease(&it);
   osalDbgCheck(NULL == it.ring);
   osalDbgCheck(NAND_RING_MOUNTED == ring->state);
+
+  /* write third session to the end of ring */
+  nandRingUmount(ring);
+  nandRingMount(ring);
+  const size_t N3 = NAND_TEST_LEN - N1 - N2 - tail_len;
+  for (size_t b=0; b<N3; b++) {
+    for (size_t i=0; i<ppb; i++) {
+      bool status = nandRingWritePage(ring, pagebuf);
+      osalDbgCheck(OSAL_SUCCESS == status);
+    }
+  }
+
+  NandRingIteratorBind(&it, ring);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(! NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1 + N2);
+  osalDbgCheck(session.last_blk == NAND_TEST_LAST_BLOCK - tail_len);
+  osalDbgCheck(session.last_page == 63);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(! NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 + N2 - 1);
+  osalDbgCheck(session.last_page == 63);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(NandRingIteratorFinished(&it));
+  if (0 == tail_len)
+    osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + 1);
+  else
+    osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 - 1);
+  osalDbgCheck(session.last_page == 63);
+
+  osalDbgCheck(OSAL_FAILED == NandRingIteratorNext(&it, &session));
+  NandRingIteratorRelease(&it);
+  osalDbgCheck(NULL == it.ring);
+  osalDbgCheck(NAND_RING_MOUNTED == ring->state);
+
+  nandRingUmount(ring);
+  chHeapFree(pagebuf);
+}
+
+
+
+
+
+/**
+ * @brief iterator_multisession_overlap
+ * @param ring
+ */
+void iterator_multisession_overlap(NandRing *ring) {
+  const size_t start = ring->config->start_blk;
+  const size_t len   = ring->config->len;
+  NANDDriver *nandp  = ring->config->nandp;
+  const size_t ppb = nandp->config->pages_per_block;
+  const size_t pds = nandp->config->page_data_size;
+  uint8_t *pagebuf = chHeapAlloc(NULL, pds);
+  NandRingIterator it;
+  NandRingSession session;
+  const size_t N1 = 12;
+  const size_t N2 = 24;
+  size_t N3;
+
+  osalDbgCheck(is_sequence_good(ring));
+  nandEraseRange(nandp, start, len);
+
+  /* 2 sessions not full ring */
+  nandRingMount(ring);
+  for (size_t b=0; b<N1; b++) {
+    for (size_t i=0; i<ppb; i++) {
+      bool status = nandRingWritePage(ring, pagebuf);
+      osalDbgCheck(OSAL_SUCCESS == status);
+    }
+  }
+  nandRingUmount(ring);
+  nandRingMount(ring);
+  for (size_t b=0; b<N2; b++) {
+    for (size_t i=0; i<ppb; i++) {
+      bool status = nandRingWritePage(ring, pagebuf);
+      osalDbgCheck(OSAL_SUCCESS == status);
+    }
+  }
+
+  /* write third session to overlap first session */
+  nandRingUmount(ring);
+  nandRingMount(ring);
+  N3 = NAND_TEST_LEN - N1 - N2 + N1/2;
+  for (size_t b=0; b<N3; b++) {
+    for (size_t i=0; i<ppb; i++) {
+      bool status = nandRingWritePage(ring, pagebuf);
+      osalDbgCheck(OSAL_SUCCESS == status);
+    }
+  }
+
+  NandRingIteratorBind(&it, ring);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(! NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1 + N2);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1/2 - 1);
+  osalDbgCheck(session.last_page == 63);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(! NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 + N2 - 1);
+  osalDbgCheck(session.last_page == 63);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1/2 + 1);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 - 1);
+  osalDbgCheck(session.last_page == 63);
+  osalDbgCheck(OSAL_FAILED == NandRingIteratorNext(&it, &session));
+  NandRingIteratorRelease(&it);
+
+
+  /* write third session over the whole first session */
+  N3 = N1/2;
+  for (size_t b=0; b<N3; b++) {
+    for (size_t i=0; i<ppb; i++) {
+      bool status = nandRingWritePage(ring, pagebuf);
+      osalDbgCheck(OSAL_SUCCESS == status);
+    }
+  }
+
+  NandRingIteratorBind(&it, ring);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(! NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1 + N2);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 - 1);
+  osalDbgCheck(session.last_page == 63);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1 + 1);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 + N2 - 1);
+  osalDbgCheck(session.last_page == 63);
+
+  osalDbgCheck(OSAL_FAILED == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(NandRingIteratorFinished(&it));
+
+  NandRingIteratorRelease(&it);
+
+
+  /* write third session over the half of second session */
+  N3 = N2/2;
+  for (size_t b=0; b<N3; b++) {
+    for (size_t i=0; i<ppb; i++) {
+      bool status = nandRingWritePage(ring, pagebuf);
+      osalDbgCheck(OSAL_SUCCESS == status);
+    }
+  }
+
+  NandRingIteratorBind(&it, ring);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(! NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1 + N2);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 + N2/2 - 1);
+  osalDbgCheck(session.last_page == 63);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1 + N2/2 + 1);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 + N2 - 1);
+  osalDbgCheck(session.last_page == 63);
+
+  osalDbgCheck(OSAL_FAILED == NandRingIteratorNext(&it, &session));
+
+  NandRingIteratorRelease(&it);
+
+
+  /* write third session over the whole second session */
+  N3 = N2/2;
+  for (size_t b=0; b<N3; b++) {
+    for (size_t i=0; i<ppb; i++) {
+      bool status = nandRingWritePage(ring, pagebuf);
+      osalDbgCheck(OSAL_SUCCESS == status);
+    }
+  }
+
+  NandRingIteratorBind(&it, ring);
+
+  osalDbgCheck(OSAL_SUCCESS == NandRingIteratorNext(&it, &session));
+  osalDbgCheck(NandRingIteratorFinished(&it));
+  osalDbgCheck(session.first_blk == NAND_TEST_START_BLOCK + N1 + N2 + 1);
+  osalDbgCheck(session.last_blk == NAND_TEST_START_BLOCK + N1 + N2 - 1);
+  osalDbgCheck(session.last_page == 63);
+  osalDbgCheck(OSAL_FAILED == NandRingIteratorNext(&it, &session));
+
+  NandRingIteratorRelease(&it);
+
+
+  nandRingUmount(ring);
+  chHeapFree(pagebuf);
 }
 
 
@@ -698,7 +899,9 @@ void nandRingIteratorTest(NANDDriver *nandp, const NANDConfig *config, bitmap_t 
 
   iterator_empty(&nandring);
   iterator_single_session(&nandring);
-  iterator_multisession(&nandring);
+  iterator_multisession(&nandring, 1);
+  iterator_multisession(&nandring, 0);
+  iterator_multisession_overlap(&nandring);
 
   nandRingStop(&nandring);
   chHeapFree(ring_working_area);

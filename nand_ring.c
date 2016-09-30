@@ -676,23 +676,10 @@ void NandRingIteratorBind(NandRingIterator *it, NandRing *ring) {
     /* ring is empty */
     it->finished = true;
     it->last_blk = -1;
-    it->state = NAND_ITERATOR_NO_SESSION;
   }
   else {
-    NandPageHeader hdr;
-    uint32_t blk = next_good(ring, ring->cur_blk);
-    if (! page_header(ring, blk, 0, &hdr)) {  // empty block found
-      it->state = NAND_ITERATOR_SINGLE_SESSION;
-    }
-    else if (hdr.back_link == ring->cur_back_link) {
-      it->state = NAND_ITERATOR_LOOPED_SESSION;
-    }
-    else {
-      it->state = NAND_ITERATOR_MULTI_SESSION;
-    }
     it->finished = false;
     it->last_blk = last_written_block(ring);
-    it->notch = ring->cur_back_link;
   }
 
   ring->state = NAND_RING_ITERATOR_BOUNDED;
@@ -713,10 +700,10 @@ bool NandRingIteratorNext(NandRingIterator *it, NandRingSession *session) {
     goto ERROR;
   }
 
-  NandPageHeader hdr_first, hdr_last;
-  uint32_t last_blk  = -1;
-  uint32_t first_blk = -1;
-  uint32_t last_page = -1;
+  NandPageHeader hdr_first, hdr_last, hdr_back;
+  uint32_t last_blk;
+  uint32_t first_blk;
+  uint32_t last_page;
 
   last_blk = it->last_blk;
   last_page = last_written_page(ring, last_blk);
@@ -724,37 +711,62 @@ bool NandRingIteratorNext(NandRingIterator *it, NandRingSession *session) {
     goto ERROR;
   }
 
-  switch(it->state) {
-  case NAND_ITERATOR_NO_SESSION:
-    first_blk = -1;
-    goto ERROR;
-    break;
+  first_blk = next_good(ring, hdr_last.back_link);
 
-  case NAND_ITERATOR_SINGLE_SESSION:
-    first_blk = next_good(ring, get_last_blk(ring));
-    it->finished  = true;
-    break;
-
-  case NAND_ITERATOR_LOOPED_SESSION:
-    first_blk = next_good(ring, ring->cur_blk);
-    it->finished  = true;
-    break;
-
-  case NAND_ITERATOR_MULTI_SESSION:
-    first_blk = next_good(ring, hdr_last.back_link);
-    if (it->notch == hdr_first.back_link) {
-      it->finished  = true;
+  if (! page_header(ring, hdr_last.back_link, last_page, &hdr_back)) {
+    it->finished = true; // empty space detected
+  }
+  else {
+    if ((hdr_back.back_link == hdr_last.back_link)
+        || (hdr_back.id > hdr_last.id)) {
+      /* single wrapped session detected OR
+         wrapped multisession points somewhere in previouse sessions */
+      it->finished = true;
+      // recover first block of the session from current block of the ring
+      first_blk = next_good(ring, ring->cur_blk);
     }
-    break;
   }
 
   if (! page_header(ring, first_blk, 0, &hdr_first)
-      || (hdr_first.back_link != hdr_last.back_link)
-      || (hdr_last.id < hdr_first.id)) {
+      || (hdr_first.back_link != hdr_last.back_link)) {
     goto ERROR;
   }
   fill_session(it, &hdr_first, &hdr_last, first_blk, session);
+  it->last_blk = hdr_last.back_link; // prepare next iteration
   return OSAL_SUCCESS;
+
+
+//  switch(it->state) {
+//  case NAND_ITERATOR_NO_SESSION:
+//    first_blk = -1;
+//    goto ERROR;
+//    break;
+
+//  case NAND_ITERATOR_SINGLE_SESSION:
+//    first_blk = next_good(ring, get_last_blk(ring));
+//    it->finished  = true;
+//    break;
+
+//  case NAND_ITERATOR_LOOPED_SESSION:
+//    first_blk = next_good(ring, ring->cur_blk);
+//    it->finished  = true;
+//    break;
+
+//  case NAND_ITERATOR_MULTI_SESSION:
+//    first_blk = next_good(ring, hdr_last.back_link);
+//    if (it->notch == hdr_first.back_link) {
+//      it->finished  = true;
+//    }
+//    break;
+//  }
+
+//  if (! page_header(ring, first_blk, 0, &hdr_first)
+//      || (hdr_first.back_link != hdr_last.back_link)
+//      || (hdr_last.id < hdr_first.id)) {
+//    goto ERROR;
+//  }
+//  fill_session(it, &hdr_first, &hdr_last, first_blk, session);
+//  return OSAL_SUCCESS;
 
 ERROR:
   it->finished = true;
