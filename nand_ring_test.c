@@ -14,7 +14,7 @@
  ******************************************************************************
  */
 
-#define NAND_TEST_START_BLOCK     (2300)
+#define NAND_TEST_START_BLOCK     (2100)
 #define NAND_TEST_LEN             100
 #define NAND_TEST_LAST_BLOCK      (NAND_TEST_START_BLOCK + NAND_TEST_LEN - 1)
 
@@ -455,7 +455,8 @@ void error_handling(NandRing *ring) {
   /*
    * make clean
    */
-  __nandEraseRangeForce(nandp, ring->config->start_blk, ring->config->len);
+  __nandSetErrorChance(0);
+  __nandEraseRangeForce(nandp, blk, len);
   chHeapFree(pagebuf);
 }
 
@@ -719,10 +720,6 @@ void iterator_multisession(NandRing *ring, size_t tail_len) {
   chHeapFree(pagebuf);
 }
 
-
-
-
-
 /**
  * @brief iterator_multisession_overlap
  * @param ring
@@ -908,13 +905,10 @@ void nandRingIteratorTest(NANDDriver *nandp, const NANDConfig *config, bitmap_t 
   nandStop(nandp);
 }
 
-
 /**
  *
  */
 void nandRingTest(NANDDriver *nandp, const NANDConfig *config, bitmap_t *bb_map) {
-
-  osalSysHalt("You need to add back_link testing in test suite");
 
   nandStart(nandp, config, bb_map);
   nandRingObjectInit(&nandring);

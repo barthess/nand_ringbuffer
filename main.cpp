@@ -169,6 +169,7 @@ static THD_FUNCTION(BlinkThread, arg) {
     chThdSleepMilliseconds(100);
     red_led_off();
   }
+  red_led_off();
   chThdExit(MSG_OK);
 }
 
@@ -203,8 +204,8 @@ int main(void) {
   nandStop(&NAND);
 
   nand_wp_release();
+  nandRingTest(&NAND, &nandcfg, &badblock_map);
   nandRingIteratorTest(&NAND, &nandcfg, &badblock_map);
-  //nandRingTest(&NAND, &nandcfg, &badblock_map);
   //nandLogTest(&NAND, &nandcfg, &badblock_map);
   nand_wp_assert();
 

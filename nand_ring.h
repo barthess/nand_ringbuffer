@@ -32,7 +32,7 @@ typedef struct __attribute__((packed)) {
   /**
    * @brief     Last block number in _previous_ session.
    */
-  uint16_t    back_link;
+  uint32_t    back_link;
   /**
    * @brief     Number of actually written bytes in page.
    * @details   Used during flush procedure and during "file" size estimation.
@@ -109,20 +109,13 @@ typedef struct {
   uint8_t               *wa;
 } NandRing;
 
-//typedef enum {
-//  NAND_ITERATOR_NO_SESSION,
-//  NAND_ITERATOR_SINGLE_SESSION,
-//  NAND_ITERATOR_LOOPED_SESSION,
-//  NAND_ITERATOR_MULTI_SESSION
-//} nand_iterator_session_t;
-
 /**
  *
  */
 typedef struct {
   NandRing *ring;
   /**
-   * @brief last written block of the current session
+   * @brief last written block of the discovered session
    */
   uint32_t last_blk;
   /**
